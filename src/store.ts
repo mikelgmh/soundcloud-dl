@@ -25,6 +25,14 @@ export const BIN_DIR = isAppBundle
 export const PROFILE_DIR = path.join(SND_DIR, 'profile');
 export const COOKIES_FILE = path.join(SND_DIR, 'cookies.txt');
 export const ARCHIVE_FILE = path.join(SND_DIR, 'archive.txt');
+export const HISTORY_FILE = path.join(SND_DIR, 'history.jsonl');
+
+export interface HistoryItem {
+  ts: number;
+  target: string;
+  format: string;
+  ok: boolean;
+}
 
 export interface Config {
   setupDone?: boolean;
@@ -111,4 +119,33 @@ export function readArchiveIds(): Set<string> {
     // sin archivo todavía
   }
   return ids;
+}
+
+export function appendHistory(item: HistoryItem): void {
+  try {
+    fs.mkdirSync(SND_DIR, { recursive: true });
+    fs.appendFileSync(HISTORY_FILE, JSON.stringify(item) + '\n');
+  } catch {
+    // ignorar
+  }
+}
+
+export function readHistory(limit = 30): HistoryItem[] {
+  try {
+    const text = fs.readFileSync(HISTORY_FILE, 'utf8');
+    const items = text
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => {
+        try {
+          return JSON.parse(l) as HistoryItem;
+        } catch {
+          return null;
+        }
+      })
+      .filter((x): x is HistoryItem => x !== null);
+    return items.slice(-limit).reverse();
+  } catch {
+    return [];
+  }
 }

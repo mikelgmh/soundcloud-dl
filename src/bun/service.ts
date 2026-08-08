@@ -20,19 +20,22 @@ import {
   fetchLikes,
 } from "../download";
 import {
+  appendHistory,
   ARCHIVE_FILE,
   BIN_DIR,
   loadConfig,
   loadLikesCache,
   readArchiveIds,
+  readHistory,
   saveConfig,
   saveLikesCache,
   writeCookiesFile,
   type Config,
   type LikedTrack,
 } from "../store";
-import { clearSoundCloudSession, verifyToken } from "./login";
+import { clearSoundCloudSession } from "./login";
 import { runStream } from "../util";
+import { Utils } from "electrobun/bun";
 import type {
   ConfigPayload,
   DepsStatus,
@@ -42,6 +45,7 @@ import type {
   LogLevel,
   StatusSnapshot,
   SyncStatsPayload,
+  HistoryItemPayload,
   UpdateResultPayload,
 } from "../shared/types";
 
@@ -289,19 +293,6 @@ export class Service {
     return { ok: true };
   }
 
-  /** Comprueba si el token guardado sigue siendo válido (y lo limpia si no). */
-  async validateSession(): Promise<{ valid: boolean; username?: string }> {
-    const token = this.config.oauthToken;
-    if (!token) return { valid: false };
-    const result = await verifyToken(token);
-    if (!result.valid && this.config.oauthToken) {
-      delete this.config.oauthToken;
-      saveConfig(this.config);
-      this.emitter.log("warn", "La sesión guardada ya no es válida. Inicia sesión de nuevo.");
-    }
-    return result;
-  }
-
   // ---- Favoritos ----
 
   async refreshLikes(): Promise<LikesResultPayload> {
@@ -384,6 +375,45 @@ export class Service {
     );
   }
 
+  /** Descarga cualquier enlace de SoundCloud pegado por el usuario. */
+  async downloadUrl(url: string): Promise<{ ok: boolean; code: number }> {
+    const trimmed = url.trim();
+    if (!/^https?:\/\/(www\.|m\.|on\.)?soundcloud\.com\//i.test(trimmed)) {
+      throw new Error("Ese enlace no parece ser de SoundCloud.");
+    }
+    return this.downloadTrack(trimmed);
+  }
+
+  /** Configuración exportable (sin el token de sesión). */
+  exportConfig(): { json: string } {
+    const { oauthToken: _omit, ...safe } = this.config;
+    return { json: JSON.stringify(safe, null, 2) };
+  }
+
+  /** Importa la configuración (nunca el token de sesión). */
+  importConfig(json: string): { ok: boolean } {
+    const parsed = JSON.parse(json) as Partial<Config>;
+    if (!parsed || typeof parsed !== "object") {
+      throw new Error("El JSON de configuración no es válido.");
+    }
+    const next: Config = { ...this.config };
+    if (parsed.outdir) next.outdir = parsed.outdir;
+    if (parsed.format) next.format = parsed.format;
+    if (parsed.bitrate) next.bitrate = parsed.bitrate;
+    if (parsed.filenameTemplate) next.filenameTemplate = parsed.filenameTemplate;
+    if (parsed.skipExisting !== undefined) next.skipExisting = parsed.skipExisting;
+    next.setupDone = true;
+    this.config = next;
+    saveConfig(next);
+    this.emitter.log("success", "Configuración importada.");
+    return { ok: true };
+  }
+
+  /** Historial reciente de descargas. */
+  getHistory(): { items: HistoryItemPayload[] } {
+    return { items: readHistory(30) };
+  }
+
   cancelDownload(): { ok: boolean } {
     if (this.abort) {
       this.abort.abort();
@@ -444,6 +474,35 @@ export class Service {
       "download",
       code === 0 ? "Descarga completada" : `Descarga terminó con código ${code}`,
     );
+
+    // Historial + notificación del sistema al terminar.
+    const target = this.downloadUrlTarget(args);
+    appendHistory({
+      ts: Date.now(),
+      target,
+      format: this.config.format ?? "mp3",
+      ok: code === 0,
+    });
+    if (code === 0) {
+      try {
+        Utils.showNotification({
+          title: "Descarga completada",
+          body:
+            target === "favoritos"
+              ? "Se ha sincronizado tu lista de favoritos."
+              : `Se ha descargado: ${target}`,
+        });
+      } catch {
+        // las notificaciones no son críticas
+      }
+    }
     return { ok: code === 0, code };
+  }
+
+  /** Extrae de los args el destino de la descarga (para historial/notificación). */
+  private downloadUrlTarget(args: string[]): string {
+    const url = args[args.length - 1] ?? "";
+    if (/\/likes$/.test(url)) return "favoritos";
+    return url;
   }
 }

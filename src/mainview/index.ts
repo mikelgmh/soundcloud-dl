@@ -218,7 +218,10 @@ function showView(name: string): void {
     b.classList.toggle("text-brand-300", active);
     b.classList.toggle("font-medium", active);
   });
-  if (name === "download") renderSyncStats();
+  if (name === "download") {
+    renderSyncStats();
+    renderHistory();
+  }
 }
 
 document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((b) => {
@@ -266,8 +269,43 @@ $<HTMLButtonElement>("btn-sync-all").addEventListener("click", () =>
     $<HTMLDivElement>("dl-log").textContent = "";
     await api.request.downloadAll({});
     await renderSyncStats();
+    await renderHistory();
   }),
 );
+
+// ---- Historial ----
+async function renderHistory(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const res = await api.request.getHistory({});
+    const list = $<HTMLElement>("history-list");
+    list.textContent = "";
+    if (!res.items.length) {
+      const p = document.createElement("p");
+      p.className = "text-xs text-ink-500";
+      p.textContent = "Sin descargas registradas todavía.";
+      list.appendChild(p);
+      return;
+    }
+    for (const it of res.items) {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between gap-3 text-xs py-1";
+      const label = document.createElement("span");
+      label.className = "text-ink-300 truncate";
+      label.textContent =
+        it.target === "favoritos" ? "Sincronización de favoritos" : it.target;
+      const meta = document.createElement("span");
+      meta.className = "text-ink-500 shrink-0 tabular-nums";
+      const d = new Date(it.ts);
+      meta.textContent = `${it.format} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      row.appendChild(label);
+      row.appendChild(meta);
+      list.appendChild(row);
+    }
+  } catch {
+    // sin red
+  }
+}
 
 // ---- Render de estado ----
 function renderVersionLine(
@@ -461,7 +499,10 @@ document
   .querySelectorAll<HTMLElement>("[data-close-token]")
   .forEach((el) => el.addEventListener("click", closeTokenModal));
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeTokenModal();
+  if (e.key === "Escape") {
+    closeTokenModal();
+    closeConfigModal();
+  }
 });
 $<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
   withBusy("token-confirm", async () => {
@@ -627,6 +668,28 @@ $<HTMLButtonElement>("btn-search").addEventListener("click", () =>
 $<HTMLInputElement>("search-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") withBusy("btn-search", doSearch);
 });
+
+// Descargar por enlace
+$<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
+  withBusy("btn-download-url", async () => {
+    if (!guard()) return;
+    const url = $<HTMLInputElement>("url-input").value.trim();
+    if (!url) {
+      toast("Pega un enlace de SoundCloud primero", "warn");
+      return;
+    }
+    showView("download");
+    $<HTMLDivElement>("dl-log").textContent = "";
+    $<HTMLParagraphElement>("dl-title").textContent = url;
+    $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+    await api.request.downloadUrl({ url });
+    await renderSyncStats();
+    await renderHistory();
+  }),
+);
+$<HTMLInputElement>("url-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $<HTMLButtonElement>("btn-download-url").click();
+});
 $<HTMLButtonElement>("btn-search-refresh").addEventListener("click", () =>
   withBusy("btn-search-refresh", async () => {
     if (!guard()) return;
@@ -688,6 +751,56 @@ $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
   }),
 );
 
+// ---- Exportar / importar configuración ----
+function openConfigModal(mode: "export" | "import", text = ""): void {
+  const modal = $<HTMLElement>("config-modal");
+  modal.classList.remove("hidden");
+  $<HTMLElement>("config-modal-title").textContent =
+    mode === "export" ? "Exportar configuración" : "Importar configuración";
+  const ta = $<HTMLTextAreaElement>("config-text");
+  ta.value = text;
+  ta.readOnly = mode === "export";
+  $<HTMLButtonElement>("config-apply").classList.toggle("hidden", mode !== "import");
+  $<HTMLButtonElement>("config-copy").classList.toggle("hidden", mode !== "export");
+}
+const closeConfigModal = () => $<HTMLElement>("config-modal").classList.add("hidden");
+document
+  .querySelectorAll<HTMLElement>("[data-close-config]")
+  .forEach((el) => el.addEventListener("click", closeConfigModal));
+$<HTMLButtonElement>("config-cancel").addEventListener("click", closeConfigModal);
+
+$<HTMLButtonElement>("btn-export-config").addEventListener("click", () =>
+  withBusy("btn-export-config", async () => {
+    if (!guard()) return;
+    const res = await api.request.exportConfig({});
+    openConfigModal("export", res.json);
+  }),
+);
+$<HTMLButtonElement>("config-copy").addEventListener("click", async () => {
+  const text = $<HTMLTextAreaElement>("config-text").value;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    $<HTMLTextAreaElement>("config-text").select();
+    document.execCommand("copy");
+  }
+  toast("Configuración copiada al portapapeles", "success");
+});
+$<HTMLButtonElement>("btn-import-config").addEventListener("click", () =>
+  openConfigModal("import"),
+);
+$<HTMLButtonElement>("config-apply").addEventListener("click", () =>
+  withBusy("config-apply", async () => {
+    if (!guard()) return;
+    await api.request.importConfig({
+      json: $<HTMLTextAreaElement>("config-text").value,
+    });
+    closeConfigModal();
+    toast("Configuración importada", "success");
+    await loadStatus();
+  }),
+);
+
 // ---- Arranque ----
 showView("status");
 (async () => {
@@ -700,23 +813,9 @@ showView("status");
     // Comprobación de versiones de dependencias en segundo plano (sin modal).
     checkForUpdatesBackground();
   }
-  validateSessionBackground(s?.config.hasToken ?? false);
   // Comprobación de actualización de la propia app (solo en builds estables).
   checkAppUpdateBackground();
 })();
-
-async function validateSessionBackground(wasLoggedIn: boolean): Promise<void> {
-  if (!isApp) return;
-  try {
-    const res = await api.request.validateSession({});
-    if (wasLoggedIn && !res.valid) {
-      await loadStatus();
-      toast("La sesión guardada ya no es válida. Inicia sesión de nuevo.", "warn");
-    }
-  } catch {
-    // Sin red: se ignora.
-  }
-}
 
 async function checkAppUpdateBackground(): Promise<void> {
   if (!isApp) return;

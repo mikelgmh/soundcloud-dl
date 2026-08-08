@@ -6,72 +6,14 @@ import type { LoginResultPayload } from "../shared/types";
 // señales de automatización. Se abre una ventana con SoundCloud, el usuario
 // inicia sesión y se lee la cookie oauth_token de la sesión.
 //
-// IMPORTANTE: SoundCloud pone una cookie oauth_token incluso sin iniciar
-// sesión (token de invitado). Por eso no basta con ver la cookie: se verifica
-// contra la API /me y solo se acepta si el token es válido.
+// La verificación se hace dentro de la propia webview (navegando a /you y
+// comprobando si redirige a un perfil), porque la API de SoundCloud bloquea
+// peticiones externas (Datadome) y un token válido parecería inválido.
 const LOGIN_URL = "https://soundcloud.com";
 const CONNECTING_URL = "views://connecting/index.html";
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
-const POLL_MS = 700;
-
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36";
-
-let cachedClientId: string | null = null;
-
-async function getClientId(): Promise<string | null> {
-  if (cachedClientId) return cachedClientId;
-  try {
-    const home = await fetch("https://soundcloud.com/", {
-      headers: { "User-Agent": UA },
-    });
-    if (!home.ok) return null;
-    const html = await home.text();
-    const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)]
-      .map((m) => m[1])
-      .reverse();
-    for (const src of srcs) {
-      try {
-        const url = src.startsWith("http") ? src : `https:${src}`;
-        const res = await fetch(url, { headers: { "User-Agent": UA } });
-        if (!res.ok) continue;
-        const js = await res.text();
-        const m = js.match(/client_id\s*[:=]\s*"([0-9a-zA-Z]{32})"/);
-        if (m) {
-          cachedClientId = m[1];
-          return m[1];
-        }
-      } catch {
-        // siguiente script
-      }
-    }
-  } catch {
-    // sin red
-  }
-  return null;
-}
-
-/** Verifica si un token es una sesión real de SoundCloud. */
-export async function verifyToken(token: string): Promise<{
-  valid: boolean;
-  username?: string;
-}> {
-  try {
-    const clientId = await getClientId();
-    if (!clientId) return { valid: false };
-    const res = await fetch(
-      `https://api-v2.soundcloud.com/me?client_id=${clientId}`,
-      { headers: { "User-Agent": UA, Authorization: `OAuth ${token}` } },
-    );
-    if (res.status === 200) {
-      const j = (await res.json()) as { permalink?: string; username?: string };
-      return { valid: true, username: j.permalink ?? j.username };
-    }
-    return { valid: false };
-  } catch {
-    return { valid: false };
-  }
-}
+const POLL_MS = 800;
+const CHECK_TIMEOUT_MS = 15 * 1000;
 
 function readOAuthToken(): string | null {
   try {
@@ -111,7 +53,7 @@ export async function loginWithElectrobunWindow(
   onStatus: (msg: string) => void,
 ): Promise<LoginResultPayload> {
   let closed = false;
-  let checkNow = true;
+  let currentUrl = LOGIN_URL;
 
   const win = new BrowserWindow({
     title: "Inicia sesión en SoundCloud",
@@ -120,10 +62,9 @@ export async function loginWithElectrobunWindow(
   });
 
   win.webview.on("did-navigate", (event: unknown) => {
-    // Al navegar (p.ej. tras iniciar sesión) se re-comprueba de inmediato.
     const e = event as { data?: { detail?: string } };
-    const url = e?.data?.detail ?? "";
-    if (url.includes("soundcloud.com")) checkNow = true;
+    const d = e?.data?.detail;
+    if (d && d.includes("soundcloud.com")) currentUrl = d;
   });
   win.on("close", () => {
     closed = true;
@@ -133,8 +74,32 @@ export async function loginWithElectrobunWindow(
     "Inicia sesión en la ventana de SoundCloud. Si aparece un captcha, resuélvelo.",
   );
 
+  // Comprueba si la sesión actual es real navegando a /you (que redirige a tu
+  // perfil si estás logueado, o a /signin si no). Usa la webview real.
+  async function checkLoggedIn(): Promise<{
+    loggedIn: boolean;
+    username?: string;
+  }> {
+    currentUrl = "";
+    win.webview.loadURL("https://soundcloud.com/you");
+    const end = Date.now() + CHECK_TIMEOUT_MS;
+    while (Date.now() < end) {
+      if (closed) break;
+      const m = currentUrl.match(/soundcloud\.com\/([^/?#]+)/);
+      if (m && !/^(signin|you|stream|feed|home|discover)$/.test(m[1])) {
+        return { loggedIn: true, username: m[1] };
+      }
+      if (m && m[1] === "signin") break;
+      await sleep(250);
+    }
+    // Volver a la home para que el usuario continúe si no estaba logueado.
+    win.webview.loadURL(LOGIN_URL);
+    return { loggedIn: false };
+  }
+
   const deadline = Date.now() + LOGIN_TIMEOUT_MS;
-  let lastInvalid: string | null = null;
+  let lastCheckedToken: string | null = null;
+  let checkedInitial = false;
 
   while (Date.now() < deadline) {
     if (closed) {
@@ -143,26 +108,21 @@ export async function loginWithElectrobunWindow(
     }
 
     const token = readOAuthToken();
-    if (token && token !== lastInvalid) {
-      const v = await verifyToken(token);
-      if (v.valid) {
+    // La primera comprobación cubre el caso de sesión ya iniciada (persistida).
+    // Las siguientes solo se lanzan si el valor de la cookie cambia (login real).
+    if (token && (!checkedInitial || token !== lastCheckedToken)) {
+      const v = await checkLoggedIn();
+      checkedInitial = true;
+      if (v.loggedIn) {
         onStatus("Sesión verificada. Conectando con la app...");
-        // Muestra un aviso encima antes de cerrar la ventana.
         win.webview.loadURL(CONNECTING_URL);
         await sleep(1200);
         win.close();
         return { oauthToken: token, username: v.username };
       }
-      // Token de invitado/caducado: no es una sesión real, se sigue esperando.
-      lastInvalid = token;
+      lastCheckedToken = token;
     }
-
-    if (checkNow) {
-      checkNow = false;
-      await sleep(100);
-    } else {
-      await sleep(POLL_MS);
-    }
+    await sleep(POLL_MS);
   }
 
   win.close();

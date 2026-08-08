@@ -79,6 +79,13 @@ export interface SyncStatsPayload {
   missing: number;
 }
 
+export interface HistoryItemPayload {
+  ts: number;
+  target: string;
+  format: string;
+  ok: boolean;
+}
+
 export interface LikesResultPayload {
   tracks: LikedTrackPayload[];
   tokenInvalid: boolean;
@@ -108,16 +115,16 @@ export type AppRPCSchema = {
       loginWithToken: { params: { token: string }; response: { ok: boolean } };
       logout: { params: {}; response: { ok: boolean } };
       selectFolder: { params: {}; response: { path: string | null } };
-      validateSession: {
-        params: {};
-        response: { valid: boolean; username?: string };
-      };
       refreshLikes: { params: {}; response: LikesResultPayload };
       getLikesCache: {
         params: {};
         response: { tracks: LikedTrackPayload[]; cachedAt: number | null };
       };
       getSyncStats: { params: {}; response: SyncStatsPayload };
+      downloadUrl: { params: { url: string }; response: { ok: boolean; code: number } };
+      exportConfig: { params: {}; response: { json: string } };
+      importConfig: { params: { json: string }; response: { ok: boolean } };
+      getHistory: { params: {}; response: { items: HistoryItemPayload[] } };
       downloadAll: { params: {}; response: { ok: boolean; code: number } };
       downloadTrack: { params: { url: string }; response: { ok: boolean; code: number } };
       cancelDownload: { params: {}; response: { ok: boolean } };
