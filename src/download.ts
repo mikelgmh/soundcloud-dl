@@ -27,6 +27,8 @@ export interface DownloadOptions extends Session {
   skipExisting?: boolean;
   /** URL concreta a descargar (si no, la lista de favoritos). */
   url?: string;
+  /** Varias URLs (p.ej. una colección). */
+  urls?: string[];
   /** Archivo de sincronización de yt-dlp (registra las ya descargadas). */
   archiveFile?: string;
 }
@@ -141,8 +143,12 @@ export function buildDownloadArgs(opts: DownloadOptions): string[] {
     '--embed-thumbnail',
     '--windows-filenames',
     '-o', path.join(opts.outDir, `${template}.%(ext)s`),
-    opts.url ?? likesUrl(opts.username),
   );
+  if (opts.urls && opts.urls.length) {
+    args.push(...opts.urls);
+  } else {
+    args.push(opts.url ?? likesUrl(opts.username));
+  }
   return args;
 }
 

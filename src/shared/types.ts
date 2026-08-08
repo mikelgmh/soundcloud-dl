@@ -31,8 +31,15 @@ export interface ConfigPayload {
   bitrate?: string;
   /** Plantilla del nombre de archivo (sin extensión). */
   filenameTemplate?: string;
+  /** Tema: 'dark' | 'light' */
+  theme?: string;
   skipExisting?: boolean;
   hasToken: boolean;
+}
+
+export interface CollectionPayload {
+  name: string;
+  trackIds: string[];
 }
 
 export interface LikedTrackPayload {
@@ -125,6 +132,19 @@ export type AppRPCSchema = {
       exportConfig: { params: {}; response: { json: string } };
       importConfig: { params: { json: string }; response: { ok: boolean } };
       getHistory: { params: {}; response: { items: HistoryItemPayload[] } };
+      getCollections: { params: {}; response: { collections: CollectionPayload[] } };
+      createCollection: { params: { name: string }; response: { ok: boolean } };
+      removeCollection: { params: { name: string }; response: { ok: boolean } };
+      addTrackToCollection: {
+        params: { name: string; trackId: string };
+        response: { ok: boolean };
+      };
+      removeTrackFromCollection: {
+        params: { name: string; trackId: string };
+        response: { ok: boolean };
+      };
+      downloadCollection: { params: { name: string }; response: { ok: boolean; code: number } };
+      cleanupNonFavorites: { params: {}; response: { removed: string[] } };
       downloadAll: { params: {}; response: { ok: boolean; code: number } };
       downloadTrack: { params: { url: string }; response: { ok: boolean; code: number } };
       cancelDownload: { params: {}; response: { ok: boolean } };

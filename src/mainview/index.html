@@ -97,6 +97,18 @@
             </svg>
             Ajustes
           </button>
+          <button
+            id="nav-developer"
+            data-view="developer"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m7 9-3 3 3 3" />
+              <path d="m17 9 3 3-3 3" />
+              <path d="M13 6l-2 12" />
+            </svg>
+            Desarrollador
+          </button>
         </nav>
 
         <div id="sidebar-status" class="px-3 pb-5">
@@ -289,6 +301,13 @@
                 >
                   Descargar todo
                 </button>
+                <button
+                  id="btn-cleanup"
+                  class="px-4 py-2 rounded-lg border border-red-500/30 text-sm text-red-400 hover:bg-red-500/10 active:scale-[0.98] transition-all"
+                  title="Elimina de la carpeta las canciones descargadas que ya no están en favoritos"
+                >
+                  Limpiar no favoritos
+                </button>
               </div>
             </div>
             <div class="progress-track mt-4">
@@ -297,6 +316,33 @@
             <p id="sync-count" class="text-xs text-ink-500 mt-2 tabular-nums">
               0 de 0 descargadas
             </p>
+          </div>
+
+          <!-- Colecciones -->
+          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-6">
+            <h3 class="font-medium text-white mb-1">Colecciones</h3>
+            <p class="text-xs text-ink-400 mb-4">
+              Agrupa canciones y sincroniza solo las que elijas.
+            </p>
+            <div class="flex gap-2 mb-4">
+              <input
+                id="collection-input"
+                type="text"
+                placeholder="Nombre de la colección"
+                class="flex-1 px-4 py-2 rounded-lg bg-ink-950 border border-ink-700 text-ink-100 placeholder:text-ink-500 focus:border-brand-500 focus:outline-none transition-colors"
+              />
+              <button
+                id="btn-create-collection"
+                class="px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
+              >
+                Crear
+              </button>
+            </div>
+            <div id="collections-list" class="space-y-2">
+              <p class="text-xs text-ink-500">
+                Aún no tienes colecciones.
+              </p>
+            </div>
           </div>
 
           <div id="dl-active" class="rounded-2xl border border-ink-800 bg-ink-900/70 p-6">
@@ -317,13 +363,6 @@
             </div>
           </div>
 
-          <div
-            class="rounded-2xl border border-ink-800 bg-black/40 p-4 font-mono text-[11px] leading-relaxed overflow-y-auto h-72 select-text"
-            id="dl-log"
-          >
-            <p class="text-ink-500">El registro de yt-dlp aparecerá aquí.</p>
-          </div>
-
           <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
             <h3 class="font-medium text-white mb-3">Historial de descargas</h3>
             <div
@@ -333,6 +372,36 @@
               <p class="text-xs text-ink-500">
                 Sin descargas registradas todavía.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vista: Desarrollador -->
+        <section id="view-developer" class="view mx-auto max-w-3xl p-8 md:p-10 space-y-5 hidden">
+          <header class="mb-2">
+            <h2 class="font-display text-2xl font-semibold text-white">
+              Desarrollador
+            </h2>
+            <p class="text-sm text-ink-400 mt-1">
+              Consola de yt-dlp y estadísticas.
+            </p>
+          </header>
+
+          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
+            <h3 class="font-medium text-white mb-3">Estadísticas</h3>
+            <div id="stats-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+            <p class="text-xs text-ink-500 mt-3">
+              Últimos 7 días · solo descargas registradas.
+            </p>
+          </div>
+
+          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
+            <h3 class="font-medium text-white mb-3">Consola de yt-dlp</h3>
+            <div
+              class="rounded-xl border border-ink-800 bg-black/40 p-4 font-mono text-[11px] leading-relaxed overflow-y-auto h-72 select-text"
+              id="dev-log"
+            >
+              <p class="text-ink-500">El registro de yt-dlp aparecerá aquí.</p>
             </div>
           </div>
         </section>
@@ -425,6 +494,17 @@
             </label>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <label class="block">
+                <span class="text-sm font-medium text-ink-200">Tema</span>
+                <select
+                  id="set-theme"
+                  class="mt-1.5 w-full px-4 py-2.5 rounded-lg bg-ink-950 border border-ink-700 text-ink-100 focus:border-brand-500 focus:outline-none transition-colors"
+                >
+                  <option value="dark">Oscuro</option>
+                  <option value="light">Claro</option>
+                </select>
+              </label>
+
               <label class="block">
                 <span class="text-sm font-medium text-ink-200">
                   Formato de audio

@@ -36,6 +36,15 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       exportConfig: async () => service.exportConfig(),
       importConfig: async ({ json }) => service.importConfig(json),
       getHistory: async () => service.getHistory(),
+      getCollections: async () => service.getCollections(),
+      createCollection: async ({ name }) => service.createCollection(name),
+      removeCollection: async ({ name }) => service.removeCollection(name),
+      addTrackToCollection: async ({ name, trackId }) =>
+        service.addTrackToCollection(name, trackId),
+      removeTrackFromCollection: async ({ name, trackId }) =>
+        service.removeTrackFromCollection(name, trackId),
+      downloadCollection: async ({ name }) => service.downloadCollection(name),
+      cleanupNonFavorites: async () => service.cleanupNonFavorites(),
       downloadAll: async () => service.downloadAll(),
       downloadTrack: async ({ url }) => service.downloadTrack(url),
       cancelDownload: async () => service.cancelDownload(),

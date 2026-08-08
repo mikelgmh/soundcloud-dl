@@ -60,6 +60,37 @@
     radial-gradient(900px 460px at 96% -8%, rgb(255 85 0 / 0.06), transparent 55%);
 }
 
+/* Tema claro: las utilidades usan var(--color-ink-*), así que basta con
+   invertir los valores bajo [data-theme="light"]. */
+[data-theme="light"] {
+  --color-ink-50: #18181b;
+  --color-ink-100: #27272a;
+  --color-ink-200: #3f3f46;
+  --color-ink-300: #52525b;
+  --color-ink-400: #71717a;
+  --color-ink-500: #a1a1aa;
+  --color-ink-600: #d4d4d8;
+  --color-ink-650: #e4e4e7;
+  --color-ink-700: #d4d4d8;
+  --color-ink-750: #ececee;
+  --color-ink-800: #e4e4e7;
+  --color-ink-850: #f6f6f7;
+  --color-ink-900: #fafafa;
+  --color-ink-950: #ffffff;
+}
+
+[data-theme="light"] .bg-glow {
+  opacity: 0.5;
+}
+
+[data-theme="light"] .progress-track {
+  background: #e4e4e7;
+}
+
+[data-theme="light"] .toast {
+  box-shadow: 0 12px 30px rgb(0 0 0 / 0.12);
+}
+
 /* Scrollbars discretos */
 * {
   scrollbar-width: thin;
@@ -119,7 +150,7 @@
 
 /* Barra de progreso con brillo sutil */
 .progress-track {
-  background: #23232b;
+  background: var(--color-ink-800);
   border-radius: 999px;
   overflow: hidden;
   height: 0.5rem;

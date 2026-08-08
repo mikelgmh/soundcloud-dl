@@ -5,6 +5,7 @@ import type {
   DepsStatus,
   DepVersionInfo,
   DownloadProgressPayload,
+  HistoryItemPayload,
   LikedTrackPayload,
   LogLevel,
   StatusSnapshot,
@@ -96,7 +97,7 @@ function escapeHtml(s: string): string {
 
 function appendLog(level: string, text: string): void {
   if (level === "error") toast(text, "error", true);
-  const log = $<HTMLDivElement>("dl-log");
+  const log = $<HTMLDivElement>("dev-log");
   if (log.firstChild?.textContent?.includes("El registro de yt-dlp")) {
     log.textContent = "";
   }
@@ -206,7 +207,7 @@ function updateProgress(p: DownloadProgressPayload): void {
 }
 
 // ---- Navegación ----
-const views = ["status", "download", "search", "settings"];
+const views = ["status", "download", "search", "settings", "developer"];
 
 function showView(name: string): void {
   for (const v of views) {
@@ -221,6 +222,10 @@ function showView(name: string): void {
   if (name === "download") {
     renderSyncStats();
     renderHistory();
+    renderCollections();
+  }
+  if (name === "developer") {
+    renderStats();
   }
 }
 
@@ -258,7 +263,7 @@ async function renderSyncStats(): Promise<void> {
 $<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
   withBusy("btn-sync-missing", async () => {
     if (!guard()) return;
-    $<HTMLDivElement>("dl-log").textContent = "";
+    $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
     await renderSyncStats();
   }),
@@ -266,7 +271,7 @@ $<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
 $<HTMLButtonElement>("btn-sync-all").addEventListener("click", () =>
   withBusy("btn-sync-all", async () => {
     if (!guard()) return;
-    $<HTMLDivElement>("dl-log").textContent = "";
+    $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
     await renderSyncStats();
     await renderHistory();
@@ -406,6 +411,10 @@ function setSidebar(ok: boolean, text: string): void {
   $<HTMLElement>("sidebar-text").textContent = text;
 }
 
+function applyTheme(theme: string): void {
+  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
+}
+
 async function loadStatus(): Promise<StatusSnapshot | null> {
   if (!isApp) {
     setSidebar(false, "Vista previa sin conexión a la app");
@@ -542,7 +551,7 @@ $<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
   withBusy("btn-download-all", async () => {
     if (!guard()) return;
     showView("download");
-    $<HTMLDivElement>("dl-log").textContent = "";
+    $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
     await renderSyncStats();
   }),
@@ -640,6 +649,41 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
   info.appendChild(title);
   info.appendChild(sub);
 
+  const actions = document.createElement("div");
+  actions.className = "flex items-center gap-2 shrink-0";
+
+  const collSelect = document.createElement("select");
+  collSelect.className =
+    "max-w-[120px] px-2 py-1.5 rounded-lg bg-ink-950 border border-ink-700 text-xs text-ink-200 focus:border-brand-500 focus:outline-none transition-colors";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "+ Colección";
+  collSelect.appendChild(placeholder);
+  collSelect.addEventListener("change", async () => {
+    const name = collSelect.value;
+    collSelect.value = "";
+    if (!name || !guard()) return;
+    try {
+      await api.request.addTrackToCollection({ name, trackId: t.id });
+      toast(`Añadida a "${name}"`, "success");
+    } catch (err) {
+      toast((err as Error).message, "error", true);
+    }
+  });
+  (async () => {
+    try {
+      const res = await api.request.getCollections({});
+      for (const c of res.collections) {
+        const opt = document.createElement("option");
+        opt.value = c.name;
+        opt.textContent = c.name;
+        collSelect.appendChild(opt);
+      }
+    } catch {
+      // sin colecciones
+    }
+  })();
+
   const btn = document.createElement("button");
   btn.className =
     "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all";
@@ -648,7 +692,7 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
     withBusy("", async () => {
       if (!guard()) return;
       showView("download");
-      $<HTMLDivElement>("dl-log").textContent = "";
+      $<HTMLDivElement>("dev-log").textContent = "";
       $<HTMLParagraphElement>("dl-title").textContent = t.title;
       $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
       await api.request.downloadTrack({ url: t.url });
@@ -656,9 +700,12 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
     }),
   );
 
+  actions.appendChild(collSelect);
+  actions.appendChild(btn);
+
   card.appendChild(thumb);
   card.appendChild(info);
-  card.appendChild(btn);
+  card.appendChild(actions);
   return card;
 }
 
@@ -679,7 +726,7 @@ $<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
       return;
     }
     showView("download");
-    $<HTMLDivElement>("dl-log").textContent = "";
+    $<HTMLDivElement>("dev-log").textContent = "";
     $<HTMLParagraphElement>("dl-title").textContent = url;
     $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
     await api.request.downloadUrl({ url });
@@ -704,11 +751,17 @@ function seedSettings(c: ConfigPayload): void {
   $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
   $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
   $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
+  $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
   $<HTMLInputElement>("set-template").value =
     c.filenameTemplate ?? "%(uploader)s - %(title)s [%(id)s]";
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
+  applyTheme(c.theme ?? "dark");
   updateBitrateState();
 }
+
+$<HTMLSelectElement>("set-theme").addEventListener("change", () => {
+  applyTheme($<HTMLSelectElement>("set-theme").value);
+});
 
 const LOSSLESS_ORIGINAL = ["flac", "wav", "alac", "original"];
 
@@ -744,6 +797,7 @@ $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
       format: $<HTMLSelectElement>("set-format").value,
       bitrate: $<HTMLSelectElement>("set-bitrate").value,
       filenameTemplate: template,
+      theme: $<HTMLSelectElement>("set-theme").value,
       skipExisting: $<HTMLInputElement>("set-skip").checked,
     });
     toast("Ajustes guardados", "success");
@@ -798,6 +852,144 @@ $<HTMLButtonElement>("config-apply").addEventListener("click", () =>
     closeConfigModal();
     toast("Configuración importada", "success");
     await loadStatus();
+  }),
+);
+
+// ---- Colecciones ----
+async function renderCollections(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const res = await api.request.getCollections({});
+    const list = $<HTMLElement>("collections-list");
+    list.textContent = "";
+    if (!res.collections.length) {
+      const p = document.createElement("p");
+      p.className = "text-xs text-ink-500";
+      p.textContent = "Aún no tienes colecciones.";
+      list.appendChild(p);
+      return;
+    }
+    for (const coll of res.collections) {
+      const row = document.createElement("div");
+      row.className =
+        "flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-850/60 px-4 py-2.5";
+      const info = document.createElement("div");
+      info.className = "flex-1 min-w-0";
+      const name = document.createElement("p");
+      name.className = "text-sm font-medium text-ink-100 truncate";
+      name.textContent = coll.name;
+      const count = document.createElement("p");
+      count.className = "text-xs text-ink-400 tabular-nums";
+      count.textContent = `${coll.trackIds.length} canciones`;
+      info.appendChild(name);
+      info.appendChild(count);
+
+      const dl = document.createElement("button");
+      dl.className =
+        "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white transition-all";
+      dl.textContent = "Descargar";
+      dl.addEventListener("click", () =>
+        withBusy("", async () => {
+          if (!guard()) return;
+          $<HTMLDivElement>("dev-log").textContent = "";
+          await api.request.downloadCollection({ name: coll.name });
+          await renderSyncStats();
+          await renderHistory();
+        }),
+      );
+      const rm = document.createElement("button");
+      rm.className =
+        "px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors";
+      rm.textContent = "Eliminar";
+      rm.addEventListener("click", () =>
+        withBusy("", async () => {
+          if (!guard()) return;
+          await api.request.removeCollection({ name: coll.name });
+          await renderCollections();
+        }),
+      );
+      row.appendChild(info);
+      row.appendChild(dl);
+      row.appendChild(rm);
+      list.appendChild(row);
+    }
+  } catch {
+    // sin red
+  }
+}
+
+$<HTMLButtonElement>("btn-create-collection").addEventListener("click", () =>
+  withBusy("btn-create-collection", async () => {
+    if (!guard()) return;
+    const name = $<HTMLInputElement>("collection-input").value.trim();
+    if (!name) {
+      toast("Escribe un nombre para la colección", "warn");
+      return;
+    }
+    await api.request.createCollection({ name });
+    $<HTMLInputElement>("collection-input").value = "";
+    toast(`Colección "${name}" creada`, "success");
+    await renderCollections();
+  }),
+);
+$<HTMLInputElement>("collection-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $<HTMLButtonElement>("btn-create-collection").click();
+});
+
+// ---- Estadísticas (vista desarrollador) ----
+async function renderStats(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const res = await api.request.getHistory({});
+    const items = (res.items as HistoryItemPayload[]).filter((it) => it.ok);
+    const byFormat: Record<string, number> = {};
+    let last7 = 0;
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    for (const it of items) {
+      byFormat[it.format] = (byFormat[it.format] ?? 0) + 1;
+      if (it.ts >= weekAgo) last7++;
+    }
+    const grid = $<HTMLElement>("stats-grid");
+    grid.textContent = "";
+    const cells: [string, string][] = [
+      ["Total", String(items.length)],
+      ["Últimos 7 días", String(last7)],
+      ["Formatos", Object.entries(byFormat).map(([f, n]) => `${f} ×${n}`).join(" · ") || "—"],
+    ];
+    for (const [label, value] of cells) {
+      const cell = document.createElement("div");
+      cell.className =
+        "rounded-xl border border-ink-800 bg-ink-850/60 px-3 py-2.5";
+      const l = document.createElement("p");
+      l.className = "text-[11px] text-ink-400";
+      l.textContent = label;
+      const v = document.createElement("p");
+      v.className = "text-sm font-semibold text-ink-100 mt-0.5 tabular-nums";
+      v.textContent = value;
+      cell.appendChild(l);
+      cell.appendChild(v);
+      grid.appendChild(cell);
+    }
+  } catch {
+    // sin red
+  }
+}
+
+// ---- Limpieza de no favoritos ----
+$<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
+  withBusy("btn-cleanup", async () => {
+    if (!guard()) return;
+    const ok = window.confirm(
+      "Se eliminarán de la carpeta las canciones descargadas que ya no estén en tus favoritos. ¿Continuar?",
+    );
+    if (!ok) return;
+    const res = await api.request.cleanupNonFavorites({});
+    if (res.removed.length) {
+      toast(`Eliminadas ${res.removed.length} canciones`, "success");
+    } else {
+      toast("No había canciones que limpiar", "info");
+    }
+    await renderSyncStats();
   }),
 );
 

@@ -23,13 +23,16 @@ import {
   appendHistory,
   ARCHIVE_FILE,
   BIN_DIR,
+  loadCollections,
   loadConfig,
   loadLikesCache,
   readArchiveIds,
   readHistory,
+  saveCollections,
   saveConfig,
   saveLikesCache,
   writeCookiesFile,
+  type Collection,
   type Config,
   type LikedTrack,
 } from "../store";
@@ -37,6 +40,7 @@ import { clearSoundCloudSession } from "./login";
 import { runStream } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
+  CollectionPayload,
   ConfigPayload,
   DepsStatus,
   DownloadProgressPayload,
@@ -223,6 +227,7 @@ export class Service {
     if (patch.filenameTemplate !== undefined) {
       next.filenameTemplate = patch.filenameTemplate;
     }
+    if (patch.theme !== undefined) next.theme = patch.theme as 'dark' | 'light';
     if (patch.skipExisting !== undefined) next.skipExisting = patch.skipExisting;
     if (patch.oauthToken === "") {
       delete next.oauthToken;
@@ -244,6 +249,7 @@ export class Service {
       format: c.format ?? 'mp3',
       bitrate: c.bitrate ?? c.quality ?? '320K',
       filenameTemplate: c.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE,
+      theme: c.theme ?? 'dark',
       skipExisting: c.skipExisting ?? true,
       hasToken: !!c.oauthToken,
     };
@@ -412,6 +418,100 @@ export class Service {
   /** Historial reciente de descargas. */
   getHistory(): { items: HistoryItemPayload[] } {
     return { items: readHistory(30) };
+  }
+
+  // ---- Colecciones ----
+
+  getCollections(): { collections: CollectionPayload[] } {
+    return { collections: loadCollections() };
+  }
+
+  createCollection(name: string): { ok: boolean } {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error("El nombre no puede estar vacío.");
+    const list = loadCollections();
+    if (list.some((c) => c.name === trimmed)) {
+      throw new Error("Ya existe una colección con ese nombre.");
+    }
+    list.push({ name: trimmed, trackIds: [] });
+    saveCollections(list);
+    return { ok: true };
+  }
+
+  removeCollection(name: string): { ok: boolean } {
+    saveCollections(loadCollections().filter((c) => c.name !== name));
+    return { ok: true };
+  }
+
+  addTrackToCollection(name: string, trackId: string): { ok: boolean } {
+    const list = loadCollections();
+    const coll = list.find((c) => c.name === name);
+    if (!coll) throw new Error("Colección no encontrada.");
+    if (!coll.trackIds.includes(trackId)) coll.trackIds.push(trackId);
+    saveCollections(list);
+    return { ok: true };
+  }
+
+  removeTrackFromCollection(name: string, trackId: string): { ok: boolean } {
+    const list = loadCollections();
+    const coll = list.find((c) => c.name === name);
+    if (!coll) return { ok: true };
+    coll.trackIds = coll.trackIds.filter((id) => id !== trackId);
+    saveCollections(list);
+    return { ok: true };
+  }
+
+  /** Descarga solo las canciones de una colección. */
+  async downloadCollection(name: string): Promise<{ ok: boolean; code: number }> {
+    const config = this.requireDownloadConfig();
+    const coll = loadCollections().find((c) => c.name === name);
+    if (!coll) throw new Error("Colección no encontrada.");
+    const tracks = this.getLikesCache().tracks;
+    const urls = tracks
+      .filter((t) => coll.trackIds.includes(t.id))
+      .map((t) => t.url);
+    if (urls.length === 0) throw new Error("La colección no tiene canciones.");
+    const outDir = config.outdir || DEFAULT_OUTDIR;
+    fs.mkdirSync(outDir, { recursive: true });
+    return this.runDownload(
+      buildDownloadArgs({ ...this.downloadOpts(config, outDir), urls }),
+      `Descargando colección "${name}"...`,
+    );
+  }
+
+  /** Borra archivos descargados que ya no están en favoritos. */
+  async cleanupNonFavorites(): Promise<{ removed: string[] }> {
+    const config = this.requireDownloadConfig();
+    const outDir = config.outdir || DEFAULT_OUTDIR;
+    const favIds = new Set(this.getLikesCache().tracks.map((t) => t.id));
+    const archive = readArchiveIds();
+    const removed: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const p = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(p);
+        } else {
+          const m = entry.name.match(/\[(\d+)\]/);
+          if (m && archive.has(m[1]) && !favIds.has(m[1])) {
+            try {
+              fs.unlinkSync(p);
+              removed.push(p);
+            } catch {
+              // seguir
+            }
+          }
+        }
+      }
+    };
+    if (fs.existsSync(outDir)) walk(outDir);
+    return { removed };
   }
 
   cancelDownload(): { ok: boolean } {
