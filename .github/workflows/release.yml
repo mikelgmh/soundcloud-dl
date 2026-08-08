@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  commitlint:
+    name: Conventional commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Validar mensajes de commit
+        run: |
+          FROM="${{ github.event.before }}"
+          if [ "$FROM" = "0000000000000000000000000000000000000000" ]; then
+            FROM="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          bunx commitlint --from "$FROM" --to "${{ github.sha }}" --verbose
+
+  bump:
+    name: Calcular y aplicar versión
+    needs: commitlint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular siguiente versión
+        id: version
+        run: |
+          OUT=$(node .github/scripts/bump-version.mjs)
+          echo "$OUT"
+          NEXT=$(printf '%s\n' "$OUT" | sed -n 's/^next=//p')
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Comprobar si la versión ya está publicada
+        id: exists
+        run: |
+          if git rev-parse -q --verify "refs/tags/v${{ steps.version.outputs.next }}" >/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Aplicar bump, commit y tag
+        if: steps.exists.outputs.skip == 'false'
+        run: |
+          node .github/scripts/bump-version.mjs --apply
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json electrobun.config.ts
+          git commit -m "chore(release): v${{ steps.version.outputs.next }}"
+          git push origin HEAD:${{ github.ref_name }}
+          git tag "v${{ steps.version.outputs.next }}"
+          git push origin "v${{ steps.version.outputs.next }}"

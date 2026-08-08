@@ -1,0 +1,31 @@
+{
+  "name": "soundcloud-downloader",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CLI para iniciar sesión en SoundCloud y descargar tus favoritos como MP3 320k usando yt-dlp",
+  "bin": {
+    "snd": "./index.ts"
+  },
+  "scripts": {
+    "start": "electrobun dev",
+    "dev": "electrobun dev --watch",
+    "cli": "bun run index.ts",
+    "build:css": "bunx @tailwindcss/cli -i src/mainview/input.css -o src/mainview/index.css",
+    "build:desktop": "electrobun build",
+    "build:stable": "electrobun build --env=stable",
+    "build:canary": "electrobun build --env=canary"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.10.1",
+    "electrobun": "^1.18.1",
+    "playwright": "^1.55.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.0",
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/bun": "latest",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  }
+}
