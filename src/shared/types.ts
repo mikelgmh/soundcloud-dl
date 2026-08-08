@@ -61,6 +61,11 @@ export interface StatusSnapshot {
   likesCachedAt: number | null;
 }
 
+export interface LoginResultPayload {
+  oauthToken: string;
+  username?: string;
+}
+
 export interface LikesResultPayload {
   tracks: LikedTrackPayload[];
   tokenInvalid: boolean;
@@ -86,7 +91,7 @@ export type AppRPCSchema = {
       };
       getConfig: { params: {}; response: ConfigPayload };
       saveConfig: { params: Partial<ConfigPayload>; response: ConfigPayload };
-      login: { params: {}; response: { oauthToken: string; username?: string } };
+      login: { params: {}; response: LoginResultPayload };
       loginWithToken: { params: { token: string }; response: { ok: boolean } };
       refreshLikes: { params: {}; response: LikesResultPayload };
       getLikesCache: {

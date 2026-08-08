@@ -1,6 +1,7 @@
 import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
 import type { AppRPCSchema } from "../shared/types";
 import { Service, type Emitter } from "./service";
+import { loginWithElectrobunWindow } from "./login";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -37,7 +38,7 @@ const emit: Emitter = {
   progress: (p) => rpc.send.downloadProgress(p),
 };
 
-service = new Service(emit);
+service = new Service(emit, loginWithElectrobunWindow);
 
 /** Auto-actualización de la app (solo en builds estables). */
 async function checkAppUpdate(): Promise<{

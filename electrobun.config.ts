@@ -17,9 +17,6 @@ export default {
   build: {
     bun: {
       entrypoint: "src/bun/index.ts",
-      // Playwright no se empaqueta: necesita sus binarios nativos en
-      // node_modules (se resuelve en runtime).
-      external: ["playwright"],
     },
     views: {
       mainview: {

@@ -13,8 +13,11 @@ import {
   type Deps,
   type ToolVersion,
 } from "../deps";
-import { loginWithBrowser } from "../auth";
-import { buildDownloadArgs, downloadLikesStream, fetchLikes } from "../download";
+import {
+  buildDownloadArgs,
+  downloadLikesStream,
+  fetchLikes,
+} from "../download";
 import {
   BIN_DIR,
   loadConfig,
@@ -31,6 +34,7 @@ import type {
   DepsStatus,
   DownloadProgressPayload,
   LikesResultPayload,
+  LoginResultPayload,
   LogLevel,
   StatusSnapshot,
   UpdateResultPayload,
@@ -41,6 +45,10 @@ export interface Emitter {
   status(stage: string, message: string): void;
   progress(p: DownloadProgressPayload): void;
 }
+
+export type LoginBrowserFn = (
+  onStatus: (msg: string) => void,
+) => Promise<LoginResultPayload>;
 
 const DEFAULT_OUTDIR = path.join(os.homedir(), "Music", "SoundCloud");
 
@@ -84,7 +92,10 @@ export class Service {
   private abort: AbortController | null = null;
   private versionsCache: { ytdlp: ToolVersion; ffmpeg: ToolVersion } | null = null;
 
-  constructor(private emitter: Emitter) {}
+  constructor(
+    private emitter: Emitter,
+    private loginBrowser: LoginBrowserFn,
+  ) {}
 
   // ---- Estado ----
 
@@ -223,9 +234,9 @@ export class Service {
 
   // ---- Autenticación ----
 
-  async login(): Promise<{ oauthToken: string; username?: string }> {
-    this.emitter.status("login", "Abriendo navegador para iniciar sesión...");
-    const res = await loginWithBrowser((m) => this.emitter.status("login", m));
+  async login(): Promise<LoginResultPayload> {
+    this.emitter.status("login", "Abriendo la ventana de SoundCloud...");
+    const res = await this.loginBrowser((m) => this.emitter.status("login", m));
     this.config.oauthToken = res.oauthToken;
     if (res.username) this.config.username = res.username;
     this.config.setupDone = true;
