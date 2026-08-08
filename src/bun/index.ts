@@ -1,4 +1,10 @@
-import { ApplicationMenu, BrowserView, BrowserWindow, Updater } from "electrobun/bun";
+import {
+  ApplicationMenu,
+  BrowserView,
+  BrowserWindow,
+  Updater,
+  Utils,
+} from "electrobun/bun";
 import type { AppRPCSchema } from "../shared/types";
 import { Service, type Emitter } from "./service";
 import { loginWithElectrobunWindow } from "./login";
@@ -21,8 +27,12 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       saveConfig: async (patch) => service.saveConfig(patch),
       login: async () => service.login(),
       loginWithToken: async ({ token }) => service.loginWithToken(token),
+      logout: async () => service.logout(),
+      selectFolder: async () => service.selectFolder(),
+      validateSession: async () => service.validateSession(),
       refreshLikes: async () => service.refreshLikes(),
       getLikesCache: async () => service.getLikesCache(),
+      getSyncStats: async () => service.getSyncStats(),
       downloadAll: async () => service.downloadAll(),
       downloadTrack: async ({ url }) => service.downloadTrack(url),
       cancelDownload: async () => service.cancelDownload(),
@@ -38,7 +48,22 @@ const emit: Emitter = {
   progress: (p) => rpc.send.downloadProgress(p),
 };
 
-service = new Service(emit, loginWithElectrobunWindow);
+service = new Service(
+  emit,
+  loginWithElectrobunWindow,
+  async () => {
+    try {
+      const paths = await Utils.openFileDialog({
+        canChooseFiles: false,
+        canChooseDirectory: true,
+        allowsMultipleSelection: false,
+      });
+      return paths?.[0] ?? null;
+    } catch {
+      return null;
+    }
+  },
+);
 
 /** Auto-actualización de la app (solo en builds estables). */
 async function checkAppUpdate(): Promise<{

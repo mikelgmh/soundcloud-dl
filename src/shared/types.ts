@@ -23,7 +23,14 @@ export interface ConfigPayload {
   oauthToken?: string;
   username?: string;
   outdir?: string;
+  /** Bitrate MP3 (legacy, antes de format/bitrate). */
   quality?: string;
+  /** Formato de salida: mp3 | m4a | opus | flac | wav | vorbis | original */
+  format?: string;
+  /** Bitrate para formatos con pérdida (320K, 192K...). */
+  bitrate?: string;
+  /** Plantilla del nombre de archivo (sin extensión). */
+  filenameTemplate?: string;
   skipExisting?: boolean;
   hasToken: boolean;
 }
@@ -66,6 +73,12 @@ export interface LoginResultPayload {
   username?: string;
 }
 
+export interface SyncStatsPayload {
+  total: number;
+  downloaded: number;
+  missing: number;
+}
+
 export interface LikesResultPayload {
   tracks: LikedTrackPayload[];
   tokenInvalid: boolean;
@@ -93,11 +106,18 @@ export type AppRPCSchema = {
       saveConfig: { params: Partial<ConfigPayload>; response: ConfigPayload };
       login: { params: {}; response: LoginResultPayload };
       loginWithToken: { params: { token: string }; response: { ok: boolean } };
+      logout: { params: {}; response: { ok: boolean } };
+      selectFolder: { params: {}; response: { path: string | null } };
+      validateSession: {
+        params: {};
+        response: { valid: boolean; username?: string };
+      };
       refreshLikes: { params: {}; response: LikesResultPayload };
       getLikesCache: {
         params: {};
         response: { tracks: LikedTrackPayload[]; cachedAt: number | null };
       };
+      getSyncStats: { params: {}; response: SyncStatsPayload };
       downloadAll: { params: {}; response: { ok: boolean; code: number } };
       downloadTrack: { params: { url: string }; response: { ok: boolean; code: number } };
       cancelDownload: { params: {}; response: { ok: boolean } };

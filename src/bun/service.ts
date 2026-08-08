@@ -15,19 +15,23 @@ import {
 } from "../deps";
 import {
   buildDownloadArgs,
+  DEFAULT_FILENAME_TEMPLATE,
   downloadLikesStream,
   fetchLikes,
 } from "../download";
 import {
+  ARCHIVE_FILE,
   BIN_DIR,
   loadConfig,
   loadLikesCache,
+  readArchiveIds,
   saveConfig,
   saveLikesCache,
   writeCookiesFile,
   type Config,
   type LikedTrack,
 } from "../store";
+import { clearSoundCloudSession, verifyToken } from "./login";
 import { runStream } from "../util";
 import type {
   ConfigPayload,
@@ -37,6 +41,7 @@ import type {
   LoginResultPayload,
   LogLevel,
   StatusSnapshot,
+  SyncStatsPayload,
   UpdateResultPayload,
 } from "../shared/types";
 
@@ -95,6 +100,7 @@ export class Service {
   constructor(
     private emitter: Emitter,
     private loginBrowser: LoginBrowserFn,
+    private folderPicker: () => Promise<string | null>,
   ) {}
 
   // ---- Estado ----
@@ -208,7 +214,11 @@ export class Service {
     const next: Config = { ...this.config };
     if (patch.username !== undefined) next.username = patch.username;
     if (patch.outdir !== undefined) next.outdir = patch.outdir;
-    if (patch.quality !== undefined) next.quality = patch.quality;
+    if (patch.format !== undefined) next.format = patch.format;
+    if (patch.bitrate !== undefined) next.bitrate = patch.bitrate;
+    if (patch.filenameTemplate !== undefined) {
+      next.filenameTemplate = patch.filenameTemplate;
+    }
     if (patch.skipExisting !== undefined) next.skipExisting = patch.skipExisting;
     if (patch.oauthToken === "") {
       delete next.oauthToken;
@@ -226,10 +236,23 @@ export class Service {
     return {
       ...c,
       outdir: c.outdir || DEFAULT_OUTDIR,
-      quality: c.quality ?? "320K",
+      quality: c.quality ?? '320K',
+      format: c.format ?? 'mp3',
+      bitrate: c.bitrate ?? c.quality ?? '320K',
+      filenameTemplate: c.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE,
       skipExisting: c.skipExisting ?? true,
       hasToken: !!c.oauthToken,
     };
+  }
+
+  /** Abre el selector nativo de carpeta. */
+  async selectFolder(): Promise<{ path: string | null }> {
+    try {
+      const picked = await this.folderPicker();
+      return { path: picked };
+    } catch {
+      return { path: null };
+    }
   }
 
   // ---- Autenticación ----
@@ -254,6 +277,29 @@ export class Service {
     saveConfig(this.config);
     this.emitter.log("success", "Token guardado.");
     return { ok: true };
+  }
+
+  /** Cierra la sesión: borra el token guardado y la sesión de la webview. */
+  logout(): { ok: boolean } {
+    delete this.config.oauthToken;
+    this.config.setupDone = true;
+    saveConfig(this.config);
+    clearSoundCloudSession();
+    this.emitter.log("info", "Sesión cerrada.");
+    return { ok: true };
+  }
+
+  /** Comprueba si el token guardado sigue siendo válido (y lo limpia si no). */
+  async validateSession(): Promise<{ valid: boolean; username?: string }> {
+    const token = this.config.oauthToken;
+    if (!token) return { valid: false };
+    const result = await verifyToken(token);
+    if (!result.valid && this.config.oauthToken) {
+      delete this.config.oauthToken;
+      saveConfig(this.config);
+      this.emitter.log("warn", "La sesión guardada ya no es válida. Inicia sesión de nuevo.");
+    }
+    return result;
   }
 
   // ---- Favoritos ----
@@ -285,6 +331,25 @@ export class Service {
     if (!username) return { tracks: [], cachedAt: null };
     const cached = loadLikesCache(username);
     return cached ? { tracks: cached.tracks, cachedAt: cached.cachedAt } : { tracks: [], cachedAt: null };
+  }
+
+  /** Cuenta cuántos favoritos ya están descargados y cuántos faltan. */
+  async getSyncStats(): Promise<SyncStatsPayload> {
+    let tracks = this.getLikesCache().tracks;
+    if (tracks.length === 0) {
+      try {
+        tracks = (await this.refreshLikes()).tracks;
+      } catch {
+        tracks = [];
+      }
+    }
+    const ids = readArchiveIds();
+    const downloaded = tracks.filter((t) => ids.has(t.id)).length;
+    return {
+      total: tracks.length,
+      downloaded,
+      missing: tracks.length - downloaded,
+    };
   }
 
   private getLikesCount(): number | null {
@@ -340,10 +405,14 @@ export class Service {
       ytdlp: "",
       ffmpegDir: null as string | null,
       outDir,
-      quality: config.quality ?? "320K",
+      format: config.format ?? "mp3",
+      bitrate: config.bitrate ?? config.quality ?? "320K",
+      filenameTemplate:
+        config.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE,
       skipExisting: config.skipExisting ?? true,
       cookiesFile: writeCookiesFile(config.oauthToken!),
       username: config.username!,
+      archiveFile: ARCHIVE_FILE,
     };
   }
 

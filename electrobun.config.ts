@@ -26,6 +26,7 @@ export default {
     copy: {
       "src/mainview/index.html": "views/mainview/index.html",
       "src/mainview/index.css": "views/mainview/index.css",
+      "src/connecting/index.html": "views/connecting/index.html",
     },
     watch: ["src/mainview/input.css"],
   },

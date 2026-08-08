@@ -24,14 +24,19 @@ export const BIN_DIR = isAppBundle
   : path.join(DATA_ROOT, '.bin');
 export const PROFILE_DIR = path.join(SND_DIR, 'profile');
 export const COOKIES_FILE = path.join(SND_DIR, 'cookies.txt');
+export const ARCHIVE_FILE = path.join(SND_DIR, 'archive.txt');
 
 export interface Config {
   setupDone?: boolean;
   oauthToken?: string;
   username?: string;
   outdir?: string;
-  /** Bitrate MP3: '320K' | '256K' | '192K' | '128K' */
+  /** Bitrate MP3 (legacy). */
   quality?: string;
+  /** Formato de salida: mp3 | m4a | opus | flac | wav | vorbis | original */
+  format?: string;
+  bitrate?: string;
+  filenameTemplate?: string;
   skipExisting?: boolean;
 }
 
@@ -91,4 +96,19 @@ export function loadLikesCache(
   } catch {
     return null;
   }
+}
+
+/** Ids de canciones ya descargadas según el archivo de sincronización. */
+export function readArchiveIds(): Set<string> {
+  const ids = new Set<string>();
+  try {
+    const text = fs.readFileSync(ARCHIVE_FILE, 'utf8');
+    for (const line of text.split('\n')) {
+      const id = line.trim().split(/\s+/).pop();
+      if (id) ids.add(id);
+    }
+  } catch {
+    // sin archivo todavía
+  }
+  return ids;
 }

@@ -218,11 +218,56 @@ function showView(name: string): void {
     b.classList.toggle("text-brand-300", active);
     b.classList.toggle("font-medium", active);
   });
+  if (name === "download") renderSyncStats();
 }
 
 document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((b) => {
   b.addEventListener("click", () => showView(b.dataset.view!));
 });
+
+// ---- Sincronización ----
+async function renderSyncStats(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const s = await api.request.getSyncStats({});
+    $<HTMLElement>("sync-bar").style.width = s.total
+      ? `${Math.min(100, (s.downloaded / s.total) * 100)}%`
+      : "0%";
+    $<HTMLElement>("sync-count").textContent =
+      `${s.downloaded} de ${s.total} descargadas`;
+    const btn = $<HTMLButtonElement>("btn-sync-missing");
+    if (s.missing > 0) {
+      $<HTMLElement>("sync-text").textContent =
+        `Faltan ${s.missing} canciones por descargar`;
+      btn.textContent = `Descargar faltantes (${s.missing})`;
+      btn.classList.remove("opacity-50", "pointer-events-none");
+    } else {
+      $<HTMLElement>("sync-text").textContent =
+        "Todas tus favoritas están descargadas";
+      btn.textContent = "Sincronizado";
+      btn.classList.add("opacity-50", "pointer-events-none");
+    }
+  } catch {
+    // sin red
+  }
+}
+
+$<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
+  withBusy("btn-sync-missing", async () => {
+    if (!guard()) return;
+    $<HTMLDivElement>("dl-log").textContent = "";
+    await api.request.downloadAll({});
+    await renderSyncStats();
+  }),
+);
+$<HTMLButtonElement>("btn-sync-all").addEventListener("click", () =>
+  withBusy("btn-sync-all", async () => {
+    if (!guard()) return;
+    $<HTMLDivElement>("dl-log").textContent = "";
+    await api.request.downloadAll({});
+    await renderSyncStats();
+  }),
+);
 
 // ---- Render de estado ----
 function renderVersionLine(
@@ -298,6 +343,10 @@ function renderAccount(c: ConfigPayload): void {
   chip.className = logged
     ? "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300"
     : "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-ink-800 text-ink-400";
+
+  // Con sesión: se ocultan iniciar sesión y pegar token; solo cerrar sesión.
+  $<HTMLButtonElement>("btn-login").classList.toggle("hidden", logged);
+  $<HTMLButtonElement>("btn-token").classList.toggle("hidden", logged);
   $<HTMLButtonElement>("btn-logout").classList.toggle("hidden", !logged);
 }
 
@@ -432,7 +481,7 @@ $<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
 $<HTMLButtonElement>("btn-logout").addEventListener("click", () =>
   withBusy("btn-logout", async () => {
     if (!guard()) return;
-    await api.request.saveConfig({ oauthToken: "" });
+    await api.request.logout({});
     toast("Sesión cerrada", "success");
     await loadStatus();
   }),
@@ -454,6 +503,7 @@ $<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
     showView("download");
     $<HTMLDivElement>("dl-log").textContent = "";
     await api.request.downloadAll({});
+    await renderSyncStats();
   }),
 );
 
@@ -561,6 +611,7 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
       $<HTMLParagraphElement>("dl-title").textContent = t.title;
       $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
       await api.request.downloadTrack({ url: t.url });
+      await renderSyncStats();
     }),
   );
 
@@ -587,19 +638,49 @@ $<HTMLButtonElement>("btn-search-refresh").addEventListener("click", () =>
 
 // ---- Ajustes ----
 function seedSettings(c: ConfigPayload): void {
-  $<HTMLInputElement>("set-username").value = c.username ?? "";
   $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
-  $<HTMLSelectElement>("set-quality").value = c.quality ?? "320K";
+  $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
+  $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
+  $<HTMLInputElement>("set-template").value =
+    c.filenameTemplate ?? "%(uploader)s - %(title)s [%(id)s]";
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
+  updateBitrateState();
 }
+
+const LOSSLESS_ORIGINAL = ["flac", "wav", "alac", "original"];
+
+function updateBitrateState(): void {
+  const format = $<HTMLSelectElement>("set-format").value;
+  const disabled = LOSSLESS_ORIGINAL.includes(format);
+  $<HTMLSelectElement>("set-bitrate").disabled = disabled;
+  $<HTMLElement>("set-bitrate").classList.toggle("opacity-40", disabled);
+}
+
+$<HTMLSelectElement>("set-format").addEventListener("change", updateBitrateState);
+
+$<HTMLButtonElement>("btn-pick-folder").addEventListener("click", () =>
+  withBusy("btn-pick-folder", async () => {
+    if (!guard()) return;
+    const res = await api.request.selectFolder({});
+    if (res.path) {
+      $<HTMLInputElement>("set-outdir").value = res.path;
+    }
+  }),
+);
 
 $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
   withBusy("btn-save-settings", async () => {
     if (!guard()) return;
+    const template = $<HTMLInputElement>("set-template").value.trim();
+    if (!template) {
+      toast("El formato del nombre de archivo no puede estar vacío", "warn");
+      return;
+    }
     await api.request.saveConfig({
-      username: $<HTMLInputElement>("set-username").value.trim(),
       outdir: $<HTMLInputElement>("set-outdir").value.trim(),
-      quality: $<HTMLSelectElement>("set-quality").value,
+      format: $<HTMLSelectElement>("set-format").value,
+      bitrate: $<HTMLSelectElement>("set-bitrate").value,
+      filenameTemplate: template,
       skipExisting: $<HTMLInputElement>("set-skip").checked,
     });
     toast("Ajustes guardados", "success");
@@ -619,9 +700,23 @@ showView("status");
     // Comprobación de versiones de dependencias en segundo plano (sin modal).
     checkForUpdatesBackground();
   }
+  validateSessionBackground(s?.config.hasToken ?? false);
   // Comprobación de actualización de la propia app (solo en builds estables).
   checkAppUpdateBackground();
 })();
+
+async function validateSessionBackground(wasLoggedIn: boolean): Promise<void> {
+  if (!isApp) return;
+  try {
+    const res = await api.request.validateSession({});
+    if (wasLoggedIn && !res.valid) {
+      await loadStatus();
+      toast("La sesión guardada ya no es válida. Inicia sesión de nuevo.", "warn");
+    }
+  } catch {
+    // Sin red: se ignora.
+  }
+}
 
 async function checkAppUpdateBackground(): Promise<void> {
   if (!isApp) return;
