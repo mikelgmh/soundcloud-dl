@@ -162,3 +162,42 @@
   height: 100%;
   transition: width 0.2s ease;
 }
+
+/* Chips de la plantilla de nombre de archivo */
+.chip-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-ink-700);
+  color: var(--color-ink-200);
+  font-size: 11px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.chip-btn:hover {
+  background: var(--color-ink-800);
+  color: var(--color-ink-50);
+}
+.chip-btn:active {
+  transform: scale(0.97);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  margin: 1px 1px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--color-brand-500) 15%, transparent);
+  color: var(--color-brand-300);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: none;
+  white-space: nowrap;
+}
+[data-theme="light"] .chip {
+  color: var(--color-brand-700);
+}
+#template-editor {
+  word-break: break-word;
+}

@@ -543,16 +543,31 @@
               <span class="text-sm font-medium text-ink-200">
                 Formato del nombre de archivo
               </span>
-              <input
-                id="set-template"
-                type="text"
-                placeholder="%(uploader)s - %(title)s [%(id)s]"
-                class="mt-1.5 w-full px-4 py-2.5 rounded-lg bg-ink-950 border border-ink-700 text-ink-100 font-mono text-xs placeholder:text-ink-500 focus:border-brand-500 focus:outline-none transition-colors"
-              />
+              <div
+                id="template-chips"
+                class="flex flex-wrap gap-1.5 mt-2"
+              >
+                <button type="button" data-var="title" class="chip-btn">Título</button>
+                <button type="button" data-var="uploader" class="chip-btn">Subidor</button>
+                <button type="button" data-var="artist" class="chip-btn">Artista</button>
+                <button type="button" data-var="album" class="chip-btn">Álbum</button>
+                <button type="button" data-var="id" class="chip-btn">ID</button>
+                <button type="button" data-var="playlist_index" class="chip-btn">Nº</button>
+                <button type="button" data-var="ext" class="chip-btn">Ext</button>
+              </div>
+              <div
+                id="template-editor"
+                contenteditable="true"
+                spellcheck="false"
+                class="mt-1.5 w-full min-h-[42px] px-3 py-2 rounded-lg bg-ink-950 border border-ink-700 text-ink-100 text-sm leading-relaxed focus:border-brand-500 focus:outline-none transition-colors"
+              ></div>
+              <p
+                id="template-preview"
+                class="text-xs text-ink-500 mt-1.5 font-mono"
+              ></p>
               <p class="text-xs text-ink-500 mt-1 leading-relaxed">
-                Campos: %(title)s, %(uploader)s, %(artist)s, %(album)s,
-                %(id)s, %(playlist_index)s. Puedes crear subcarpetas con
-                "/" (ej. %(artist)s/%(title)s).
+                Pulsa un botón para añadir la variable como chip y escribe los
+                separadores. Usa "/" para crear subcarpetas.
               </p>
             </label>
 

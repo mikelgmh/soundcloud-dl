@@ -746,14 +746,113 @@ $<HTMLButtonElement>("btn-search-refresh").addEventListener("click", () =>
   }),
 );
 
-// ---- Ajustes ----
+// ---- Editor de plantilla de nombre (chips) ----
+const TEMPLATE_EXAMPLES: Record<string, string> = {
+  title: "Título",
+  uploader: "Artista",
+  artist: "Artista invitado",
+  album: "Álbum",
+  id: "123456",
+  playlist_index: "3",
+  ext: "mp3",
+};
+
+function makeChip(variable: string): HTMLSpanElement {
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.contentEditable = "false";
+  chip.setAttribute("data-var", variable);
+  chip.textContent = `%(${variable})s`;
+  return chip;
+}
+
+function renderTemplateToEditor(template: string): void {
+  const editor = $<HTMLElement>("template-editor");
+  editor.textContent = "";
+  const re = /%\(([^)]+)\)s/g;
+  const frag = document.createDocumentFragment();
+  let m: RegExpExecArray | null;
+  let lastIndex = 0;
+  while ((m = re.exec(template))) {
+    if (m.index > lastIndex) {
+      frag.appendChild(document.createTextNode(template.slice(lastIndex, m.index)));
+    }
+    frag.appendChild(makeChip(m[1]));
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < template.length) {
+    frag.appendChild(document.createTextNode(template.slice(lastIndex)));
+  }
+  editor.appendChild(frag);
+}
+
+function serializeEditor(): string {
+  const editor = $<HTMLElement>("template-editor");
+  let out = "";
+  for (const node of editor.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? "";
+    } else if (node instanceof HTMLElement && node.dataset.var) {
+      out += `%(${node.dataset.var})s`;
+    } else {
+      out += (node as HTMLElement).textContent ?? "";
+    }
+  }
+  return out;
+}
+
+function appendVariableToEditor(variable: string): void {
+  const editor = $<HTMLElement>("template-editor");
+  const chip = makeChip(variable);
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(chip);
+    range.setStartAfter(chip);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } else {
+    editor.appendChild(chip);
+  }
+  editor.focus();
+  updateTemplatePreview();
+}
+
+function updateTemplatePreview(): void {
+  const tpl = serializeEditor();
+  const preview = tpl.replace(
+    /%\(([^)]+)\)s/g,
+    (_m, v: string) => TEMPLATE_EXAMPLES[v] ?? `[${v}]`,
+  );
+  $<HTMLElement>("template-preview").textContent =
+    preview ? `Nombre: ${preview}.mp3` : "";
+}
+
+document
+  .querySelectorAll<HTMLButtonElement>("#template-chips .chip-btn")
+  .forEach((btn) => {
+    btn.addEventListener("click", () => {
+      appendVariableToEditor(btn.dataset.var ?? "");
+    });
+  });
+$<HTMLElement>("template-editor").addEventListener("input", updateTemplatePreview);
+$<HTMLElement>("template-editor").addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+    e.preventDefault();
+  }
+});
+
 function seedSettings(c: ConfigPayload): void {
   $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
   $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
   $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
   $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
-  $<HTMLInputElement>("set-template").value =
-    c.filenameTemplate ?? "%(uploader)s - %(title)s [%(id)s]";
+  renderTemplateToEditor(
+    c.filenameTemplate ?? "%(uploader)s - %(title)s [%(id)s]",
+  );
+  updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");
   updateBitrateState();
@@ -787,9 +886,13 @@ $<HTMLButtonElement>("btn-pick-folder").addEventListener("click", () =>
 $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
   withBusy("btn-save-settings", async () => {
     if (!guard()) return;
-    const template = $<HTMLInputElement>("set-template").value.trim();
+    const template = serializeEditor().trim();
     if (!template) {
       toast("El formato del nombre de archivo no puede estar vacío", "warn");
+      return;
+    }
+    if (!/\([^)]+\)/.test(template)) {
+      toast("El nombre debe incluir al menos una variable", "warn");
       return;
     }
     await api.request.saveConfig({
