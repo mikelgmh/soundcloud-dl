@@ -511,27 +511,20 @@ export class Service {
     }
   }
 
-  /** Comprueba si la cuenta tiene activo el streaming de alta calidad
-   *  (transcodings hq). Requiere sesión y al menos un favorito para probar. */
+  /** Comprueba si la cuenta puede descargar en alta calidad (transcodings hq).
+   *  Usa un favorito de la caché si hay; si no, scquality obtiene el primer
+   *  favorito vía la API de SoundCloud. */
   async checkStreamingQuality(): Promise<{
     checked: boolean;
     highQuality: boolean;
   }> {
     if (!this.config.oauthToken) return { checked: false, highQuality: false };
-    let tracks = this.getLikesCache().tracks;
-    if (tracks.length === 0) {
-      try {
-        tracks = (await this.refreshLikes()).tracks;
-      } catch {
-        tracks = [];
-      }
-    }
-    const trackUrl = tracks[0]?.url;
-    if (!trackUrl) return { checked: false, highQuality: false };
+    const track = this.getLikesCache().tracks[0];
     try {
       const highQuality = await checkHighQualityStreaming({
         oauthToken: this.config.oauthToken,
-        trackUrl,
+        trackId: track?.id,
+        trackUrl: track?.url,
       });
       return { checked: true, highQuality };
     } catch {
