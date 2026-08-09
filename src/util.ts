@@ -49,19 +49,16 @@ export function runStream(cmd: string[], opts: RunStreamOpts = {}): Promise<numb
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     if (opts.controller) {
-      const pid = child.pid;
       opts.controller.pause = () => {
-        if (pid == null) return;
         try {
-          process.kill(pid, 'SIGSTOP');
+          child.kill('SIGSTOP');
         } catch {
           // no disponible (p.ej. Windows)
         }
       };
       opts.controller.resume = () => {
-        if (pid == null) return;
         try {
-          process.kill(pid, 'SIGCONT');
+          child.kill('SIGCONT');
         } catch {
           // no disponible
         }
