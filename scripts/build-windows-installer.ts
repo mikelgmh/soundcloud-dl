@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -8,11 +8,16 @@ const CHANNEL = "stable"; // Only stable builds are published to releases.
 /**
  * Builds a single-file .exe installer for Windows with Inno Setup.
  *
- * Runs on the Windows CI runner right after `bun run build:stable`. It finds
- * the electrobun app bundle in build/, compiles the Inno Setup script in
- * scripts/windows/installer.iss, and replaces the electrobun Setup.zip with a
- * proper installer that adds Start Menu/desktop shortcuts, an uninstaller and
- * a registry entry (Add/Remove Programs).
+ * Runs on the Windows CI runner right after `bun run build:stable`. It takes
+ * the app bundle tarball produced by electrobun, extracts it, compiles the
+ * Inno Setup script in scripts/windows/installer.iss from the extracted files,
+ * and replaces the electrobun Setup.zip with a proper installer that adds
+ * Start Menu/desktop shortcuts, an uninstaller and a registry entry
+ * (Add/Remove Programs).
+ *
+ * Why extract the tarball? On Windows, electrobun deletes the app bundle
+ * folder after tarring it (src/cli/index.ts: "Remove the app bundle folder
+ * after tarring"), so only `build/<prefix>/<AppName>.tar.zst` survives.
  *
  * Requires Inno Setup 6 to be installed (choco install innosetup).
  */
@@ -26,17 +31,50 @@ async function main() {
   const appFileName = appName.replace(/ /g, "");
 
   const platformPrefix = `${CHANNEL}-win-x64`;
-  const bundleDir = join(ROOT, "build", platformPrefix, appFileName);
+  const buildFolder = join(ROOT, "build", platformPrefix);
   const artifactsDir = join(ROOT, "artifacts");
 
-  if (!existsSync(bundleDir)) {
-    console.error(`App bundle not found at ${bundleDir}`);
+  // The app bundle tarball (also what the auto-updater downloads).
+  const tarball = join(buildFolder, `${appFileName}.tar.zst`);
+  if (!existsSync(tarball)) {
+    console.error(`App bundle tarball not found at ${tarball}`);
     console.error("Run `bun run build:stable` on Windows first.");
     process.exit(1);
   }
 
+  // Extract the app bundle into a staging directory.
+  const stagingDir = join(buildFolder, ".installer-stage");
+  rmSync(stagingDir, { recursive: true, force: true });
+  mkdirSync(stagingDir, { recursive: true });
+
+  const zstd = findZstd();
+  if (!zstd) {
+    console.error(
+      "zig-zstd binary not found in node_modules/electrobun/dist-win-*",
+    );
+    process.exit(1);
+  }
+
+  const tarPath = join(stagingDir, "bundle.tar");
+  console.log(`Decompressing ${tarball}...`);
+  const decompress = spawnSync(
+    zstd,
+    ["decompress", "-i", tarball, "-o", tarPath, "--no-timing"],
+    { stdio: "inherit" },
+  );
+  if (decompress.status !== 0) {
+    console.error(`zig-zstd decompress failed (exit ${decompress.status})`);
+    process.exit(decompress.status ?? 1);
+  }
+
+  console.log("Extracting app bundle...");
+  const archive = new Bun.Archive(await Bun.file(tarPath).arrayBuffer());
+  await archive.extract(stagingDir);
+
+  // The tarball contains the bundle folder at its root.
+  const bundleDir = join(stagingDir, appFileName);
   if (!existsSync(join(bundleDir, "bin", "launcher.exe"))) {
-    console.error(`launcher.exe not found inside ${bundleDir}`);
+    console.error(`launcher.exe not found inside extracted bundle ${bundleDir}`);
     process.exit(1);
   }
 
@@ -91,6 +129,7 @@ async function main() {
     }
   }
 
+  rmSync(stagingDir, { recursive: true, force: true });
   console.log(`Windows installer created: ${installer}`);
 }
 
@@ -100,6 +139,14 @@ function findIscc(): string | null {
     "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe",
     "C:\\Program Files\\Inno Setup 6\\ISCC.exe",
   ];
+  return candidates.find((c) => existsSync(c)) ?? null;
+}
+
+function findZstd(): string | null {
+  if (process.env.ZIG_ZSTD) return process.env.ZIG_ZSTD;
+  const candidates = ["dist-win-x64", "dist-win-arm64"].map(
+    (d) => join(ROOT, "node_modules", "electrobun", d, "zig-zstd.exe"),
+  );
   return candidates.find((c) => existsSync(c)) ?? null;
 }
 

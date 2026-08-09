@@ -4,7 +4,9 @@
 ;   /DMyAppName, /DMyAppVersion, /DMyAppId, /DMyChannel,
 ;   /DSourceDir, /DOutputDir, /DOutputBaseName
 ;
-; The app bundle (bin/, Resources/, lib/) is installed to:
+; SourceDir points at the app bundle extracted from the electrobun tarball
+; (see scripts/build-windows-installer.ts). The app bundle (bin/, Resources/,
+; lib/) is installed to:
 ;   %LOCALAPPDATA%\{#MyAppId}\{#MyChannel}\app
 ; That is the exact location electrobun's Updater uses on Windows
 ; (Updater.runningAppBundlePath), so the app can self-update in place without
@@ -23,7 +25,7 @@
   #define MyChannel "stable"
 #endif
 #ifndef SourceDir
-  #define SourceDir "build\stable-win-x64\SoundCloudDownloader"
+  #define SourceDir "build\stable-win-x64\.installer-stage\SoundCloudDownloader"
 #endif
 #ifndef OutputDir
   #define OutputDir "artifacts"
