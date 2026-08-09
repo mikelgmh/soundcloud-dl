@@ -293,13 +293,29 @@ export class Service {
       : DEFAULT_FILENAME_TEMPLATE;
   }
 
+  /** Bitrate por defecto según el formato (ninguno supera 256 kbps). */
+  private defaultBitrate(format?: string): string {
+    switch (format) {
+      case 'm4a':
+        return '256K';
+      case 'mp3':
+        return '256K';
+      case 'opus':
+        return '128K';
+      case 'vorbis':
+        return '192K';
+      default:
+        return '256K';
+    }
+  }
+
   private toConfigPayload(c: Config): ConfigPayload {
     return {
       ...c,
       outdir: c.outdir || DEFAULT_OUTDIR,
       quality: c.quality ?? '320K',
       format: c.format ?? 'm4a',
-      bitrate: c.bitrate ?? c.quality ?? '320K',
+      bitrate: c.bitrate ?? c.quality ?? this.defaultBitrate(c.format),
       filenameTemplate: this.getFilenameTemplate(c),
       theme: c.theme ?? 'dark',
       lang: this.lang,
@@ -765,7 +781,7 @@ export class Service {
       ffmpegDir: null as string | null,
       outDir,
       format: config.format ?? "m4a",
-      bitrate: config.bitrate ?? config.quality ?? "320K",
+      bitrate: config.bitrate ?? config.quality ?? this.defaultBitrate(config.format),
       filenameTemplate: this.getFilenameTemplate(config),
       skipExisting: config.skipExisting ?? true,
       cookiesFile: writeCookiesFile(config.oauthToken!),

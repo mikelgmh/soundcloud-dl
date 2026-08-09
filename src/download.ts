@@ -39,6 +39,15 @@ export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s';
 
 const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'];
 
+// Bitrate por defecto según el formato. Ninguno supera 256 kbps: la fuente de
+// SoundCloud es AAC 256k y un bitrate mayor no aporta calidad, solo peso.
+const DEFAULT_BITRATE: Record<string, string> = {
+  m4a: '256K',
+  mp3: '256K',
+  opus: '128K',
+  vorbis: '192K',
+};
+
 export interface FetchResult {
   tracks: LikedTrack[];
   tokenInvalid: boolean;
@@ -140,7 +149,7 @@ export function parseEntriesOutput(
 
 export function buildDownloadArgs(opts: DownloadOptions): string[] {
   const format = opts.format ?? 'm4a';
-  const bitrate = opts.bitrate ?? opts.quality ?? '320K';
+  const bitrate = opts.bitrate ?? opts.quality ?? DEFAULT_BITRATE[format] ?? '256K';
   const lossless = LOSSLESS_FORMATS.includes(format);
   const template = opts.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE;
 
@@ -160,7 +169,13 @@ export function buildDownloadArgs(opts: DownloadOptions): string[] {
   // 'original' descarga el mejor audio sin convertir.
   if (format !== 'original') {
     args.push('-x', '--audio-format', format);
-    if (!lossless) args.push('--audio-quality', bitrate);
+    if (!lossless) {
+      // A máxima calidad (256K) en M4A el stream ya es AAC 256k: se copia tal
+      // cual sin re-codificar (evita pérdida y trabajo inútil). Solo se
+      // re-codifica si se pide un bitrate inferior para ahorrar espacio.
+      const keepSource = format === 'm4a' && bitrate === '256K';
+      if (!keepSource) args.push('--audio-quality', bitrate);
+    }
   }
 
   args.push(

@@ -15,13 +15,20 @@ function argsOf(o: Partial<DownloadOptions> = {}): string[] {
 }
 
 describe("buildDownloadArgs", () => {
-  it("usa m4a 320K por defecto y el enlace de favoritos", () => {
+  it("usa m4a por defecto sin re-codificar (máxima calidad = fuente)", () => {
     const a = argsOf();
     expect(a).toEqual(expect.arrayContaining(["-f", "bestaudio/best"]));
     expect(a).toEqual(expect.arrayContaining(["-x", "--audio-format", "m4a"]));
-    expect(a).toEqual(expect.arrayContaining(["--audio-quality", "320K"]));
+    // M4A a máxima calidad copia el stream AAC: no fuerza --audio-quality.
+    expect(a).not.toContain("--audio-quality");
     expect(a).toEqual(expect.arrayContaining(["--no-overwrites"]));
     expect(a[a.length - 1]).toBe("https://soundcloud.com/usuario/likes");
+  });
+
+  it("re-codifica m4a si se pide un bitrate inferior", () => {
+    const a = argsOf({ format: "m4a", bitrate: "128K" });
+    expect(a).toEqual(expect.arrayContaining(["-x", "--audio-format", "m4a"]));
+    expect(a).toEqual(expect.arrayContaining(["--audio-quality", "128K"]));
   });
 
   it("incluye las medidas anti-baneo", () => {

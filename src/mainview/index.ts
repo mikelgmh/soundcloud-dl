@@ -1405,8 +1405,9 @@ $<HTMLElement>("template-editor").addEventListener("keydown", (e) => {
 
 function seedSettings(c: ConfigPayload): void {
   $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
-  $<HTMLSelectElement>("set-format").value = c.format ?? "m4a";
-  $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
+  const format = c.format ?? "m4a";
+  $<HTMLSelectElement>("set-format").value = format;
+  renderBitrateOptions(format, c.bitrate ?? c.quality);
   $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
   if (!langUserSet) {
     setLang(resolveLang(c.lang));
@@ -1415,7 +1416,6 @@ function seedSettings(c: ConfigPayload): void {
   updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");
-  updateBitrateState();
 }
 
 /** Mantiene el selector de idioma sincronizado con la lengua activa. */
@@ -1432,16 +1432,54 @@ $<HTMLSelectElement>("set-theme").addEventListener("change", () => {
   applyTheme($<HTMLSelectElement>("set-theme").value);
 });
 
-const LOSSLESS_ORIGINAL = ["flac", "wav", "alac", "original"];
+/** Bitrates disponibles según el formato. Ninguno supera 256 kbps: la fuente
+ *  es AAC 256k y un bitrate mayor solo añade peso sin mejorar la calidad. */
+const FORMAT_BITRATES: Record<string, string[]> = {
+  m4a: ["256K", "192K", "128K", "96K", "64K"],
+  mp3: ["256K", "192K", "128K", "96K", "64K"],
+  opus: ["160K", "128K", "96K", "64K"],
+  vorbis: ["192K", "160K", "128K", "96K", "64K"],
+  flac: [],
+  wav: [],
+  original: [],
+};
 
-function updateBitrateState(): void {
-  const format = $<HTMLSelectElement>("set-format").value;
-  const disabled = LOSSLESS_ORIGINAL.includes(format);
-  $<HTMLSelectElement>("set-bitrate").disabled = disabled;
-  $<HTMLElement>("set-bitrate").classList.toggle("opacity-40", disabled);
+/** Bitrate por defecto por formato (coincide con el del proceso main). */
+const FORMAT_DEFAULT_BITRATE: Record<string, string> = {
+  m4a: "256K",
+  mp3: "256K",
+  opus: "128K",
+  vorbis: "192K",
+};
+
+/** Reconstruye las opciones de bitrate según el formato y elige un valor
+ *  válido (el guardado si aplica, si no el default del formato). */
+function renderBitrateOptions(format: string, preferred?: string): void {
+  const options = FORMAT_BITRATES[format] ?? [];
+  const select = $<HTMLSelectElement>("set-bitrate");
+  select.textContent = "";
+  for (const b of options) {
+    const opt = document.createElement("option");
+    opt.value = b;
+    opt.textContent = b.replace("K", " kbps");
+    select.appendChild(opt);
+  }
+  const disabled = options.length === 0;
+  select.disabled = disabled;
+  select.classList.toggle("opacity-40", disabled);
+  const fallback = FORMAT_DEFAULT_BITRATE[format];
+  if (preferred && options.includes(preferred)) {
+    select.value = preferred;
+  } else if (fallback && options.includes(fallback)) {
+    select.value = fallback;
+  } else if (options.length > 0) {
+    select.value = options[0];
+  }
 }
 
-$<HTMLSelectElement>("set-format").addEventListener("change", updateBitrateState);
+$<HTMLSelectElement>("set-format").addEventListener("change", () => {
+  renderBitrateOptions($<HTMLSelectElement>("set-format").value);
+});
 
 function setOutdirError(show: boolean): void {
   const input = $<HTMLInputElement>("set-outdir");

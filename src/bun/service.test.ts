@@ -120,7 +120,7 @@ describe("Service: configuración", () => {
     const s = makeService();
     const st = await s.getStatus();
     expect(st.config.format).toBe("m4a");
-    expect(st.config.bitrate).toBe("320K");
+    expect(st.config.bitrate).toBe("256K");
     expect(st.config.theme).toBe("dark");
     expect(st.config.skipExisting).toBe(true);
     expect(st.config.hasToken).toBe(false);
