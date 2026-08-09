@@ -160,6 +160,7 @@ export type AppRPCSchema = {
         response: { ok: boolean; code: number };
       };
       downloadAll: { params: {}; response: { ok: boolean; code: number } };
+      downloadMissing: { params: {}; response: { ok: boolean; code: number } };
       downloadTrack: { params: { url: string }; response: { ok: boolean; code: number } };
       cancelDownload: { params: {}; response: { ok: boolean } };
       pauseDownload: { params: {}; response: { ok: boolean } };

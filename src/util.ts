@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import readline from 'node:readline';
 
 export interface RunResult {
@@ -42,26 +42,42 @@ export interface ProcessController {
   resume: () => void;
 }
 
+/** Señala al proceso y, en POSIX, a todo su grupo (yt-dlp + subprocesos como
+ *  ffmpeg). En Windows solo se puede terminar el proceso (sin pausa real). */
+function signalProcess(
+  child: ChildProcess,
+  signal: NodeJS.Signals,
+): boolean {
+  if (process.platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, signal);
+      return true;
+    } catch {
+      // grupo no disponible; se intenta el proceso directo
+    }
+  }
+  try {
+    return child.kill(signal);
+  } catch {
+    return false;
+  }
+}
+
 /** Lanza un comando capturando su salida línea a línea (para la GUI). */
 export function runStream(cmd: string[], opts: RunStreamOpts = {}): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn(cmd[0], cmd.slice(1), {
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Grupo de procesos propio para poder pausar/detener también los
+      // subprocesos (ffmpeg) con una sola señal.
+      detached: true,
     });
     if (opts.controller) {
       opts.controller.pause = () => {
-        try {
-          child.kill('SIGSTOP');
-        } catch {
-          // no disponible (p.ej. Windows)
-        }
+        signalProcess(child, 'SIGSTOP');
       };
       opts.controller.resume = () => {
-        try {
-          child.kill('SIGCONT');
-        } catch {
-          // no disponible
-        }
+        signalProcess(child, 'SIGCONT');
       };
     }
     const rlOut = readline.createInterface({ input: child.stdout! });
@@ -69,11 +85,7 @@ export function runStream(cmd: string[], opts: RunStreamOpts = {}): Promise<numb
     rlOut.on('line', (l) => opts.onStdout?.(l));
     rlErr.on('line', (l) => opts.onStderr?.(l));
     const abort = () => {
-      try {
-        child.kill('SIGKILL');
-      } catch {
-        // ya terminó
-      }
+      signalProcess(child, 'SIGKILL');
     };
     opts.signal?.addEventListener('abort', abort, { once: true });
     child.on('close', (code) => {

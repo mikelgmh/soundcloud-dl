@@ -216,10 +216,15 @@ describe("Service: utilidades", () => {
     expect(() => s.downloadUrl("https://example.com/x")).toThrow();
   });
 
-  it("getDownloadedIds refleja el archivo de sincronización", async () => {
+  it("getDownloadedIds refleja los ficheros en disco", async () => {
     const store = await import("../store");
-    fs.writeFileSync(store.ARCHIVE_FILE, "x soundcloud 42\n");
     const s = makeService();
+    s.saveConfig({ username: "usuario", oauthToken: "tok-fake-123", outdir });
+    store.saveLikesCache("usuario", [
+      { id: "42", title: "Tema X", url: "u/42", uploader: "Canal", index: 0 },
+    ]);
+    fs.mkdirSync(outdir, { recursive: true });
+    fs.writeFileSync(path.join(outdir, "Tema X - Canal.mp3"), "x");
     expect(s.getDownloadedIds().ids).toContain("42");
   });
 });
@@ -297,15 +302,16 @@ describe("Service: descargas", () => {
 });
 
 describe("Service: colección", () => {
-  it("getSyncStats cuenta descargadas y pendientes desde la caché", async () => {
+  it("getSyncStats cuenta descargadas y pendientes según los ficheros", async () => {
     const store = await import("../store");
     const s = makeService();
-    s.saveConfig({ username: "usuario", oauthToken: "tok-fake-123" });
+    s.saveConfig({ username: "usuario", oauthToken: "tok-fake-123", outdir });
     store.saveLikesCache("usuario", [
-      { id: "111", title: "A", url: "u/a", index: 0 },
-      { id: "222", title: "B", url: "u/b", index: 1 },
+      { id: "111", title: "A", url: "u/a", uploader: "Canal", index: 0 },
+      { id: "222", title: "B", url: "u/b", uploader: "Canal", index: 1 },
     ]);
-    fs.writeFileSync(store.ARCHIVE_FILE, "x soundcloud 111\n");
+    fs.mkdirSync(outdir, { recursive: true });
+    fs.writeFileSync(path.join(outdir, "A - Canal.mp3"), "x");
     const st = await s.getSyncStats();
     expect(st.total).toBe(2);
     expect(st.downloaded).toBe(1);

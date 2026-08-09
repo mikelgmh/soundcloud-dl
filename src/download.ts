@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { run, runStream } from './util';
 import type { LikedTrack } from './store';
 import { resolveLang, t, type Lang } from './shared/i18n';
@@ -191,4 +192,65 @@ export async function downloadLikesStream(
     onStderr: onLine,
     signal,
   });
+}
+
+// ---- Detección de archivos descargados (sincronización bidireccional) ----
+
+const COMMON_AUDIO_EXTS = [
+  'mp3', 'm4a', 'opus', 'ogg', 'flac', 'wav', 'aac', 'm4b', 'm4p', 'webm', 'wma',
+];
+
+/** Sustituye las variables de la plantilla y saneza cada segmento de ruta
+ *  igual que yt-dlp (--windows-filenames), para comparar con el disco. */
+export function renderFilenameTemplate(
+  template: string,
+  track: { id: string; title: string; uploader?: string; index?: number },
+): string {
+  const vars: Record<string, string> = {
+    title: track.title ?? '',
+    uploader: track.uploader ?? '',
+    artist: track.uploader ?? '',
+    id: String(track.id ?? ''),
+    album: '',
+    ext: '',
+    playlist_index: String(track.index ?? 0),
+  };
+  const rendered = template.replace(
+    /%(?:\(([^)]+)\))?s/g,
+    (_m, key: string) => vars[key] ?? '',
+  );
+  return rendered
+    .split('/')
+    .map((seg) =>
+      seg.replace(/[<>:"|?*\x00-\x1f]/g, '_').replace(/[.\s]+$/g, '').trim(),
+    )
+    .join('/')
+    .replace(/^[.\s]+/, '');
+}
+
+/** Escanea la carpeta de salida y devuelve los "stems" (ruta relativa sin
+ *  extensión) de los ficheros de audio, normalizados con '/'. */
+export function scanAudioStems(outDir: string): Set<string> {
+  const stems = new Set<string>();
+  const walk = (dir: string, rel = ''): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const relPath = rel ? `${rel}/${e.name}` : e.name;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full, relPath);
+      else if (e.isFile()) {
+        const ext = path.extname(e.name).slice(1).toLowerCase();
+        if (COMMON_AUDIO_EXTS.includes(ext)) {
+          stems.add(relPath.slice(0, -(ext.length + 1)));
+        }
+      }
+    }
+  };
+  walk(outDir);
+  return stems;
 }

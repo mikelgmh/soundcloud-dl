@@ -53,6 +53,7 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       searchSoundcloud: async ({ query }) => service.searchSoundcloud(query),
       downloadUrls: async ({ urls }) => service.downloadUrls(urls),
       downloadAll: async () => service.downloadAll(),
+      downloadMissing: async () => service.downloadMissing(),
       downloadTrack: async ({ url }) => service.downloadTrack(url),
       cancelDownload: async () => service.cancelDownload(),
       pauseDownload: async () => service.pauseDownload(),

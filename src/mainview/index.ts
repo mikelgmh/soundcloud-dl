@@ -465,6 +465,7 @@ function hideDlControls(): void {
   const controls = $<HTMLElement>("dl-controls");
   controls.classList.add("hidden");
   controls.classList.remove("flex");
+  downloadPaused = false;
   $<HTMLButtonElement>("btn-pause").textContent = T("dl.pause");
 }
 
@@ -598,14 +599,20 @@ async function processQueue(): Promise<void> {
       renderQueueItem(currentQueueItem);
       try {
         await api.request.downloadTrack({ url: currentQueueItem.url });
-        currentQueueItem.status = "done";
-        currentQueueItem.percent = 100;
+        // currentQueueItem puede ser null si se pulsó "Detener" mientras
+        // la descarga estaba en curso (clearQueue lo resetea).
+        if (currentQueueItem) {
+          currentQueueItem.status = "done";
+          currentQueueItem.percent = 100;
+        }
       } catch (err) {
-        currentQueueItem.status = "error";
-        toast((err as Error).message, "error", true);
+        if (currentQueueItem) {
+          currentQueueItem.status = "error";
+          toast((err as Error).message, "error", true);
+        }
       }
+      if (currentQueueItem) renderQueueItem(currentQueueItem);
       await refreshDownloadedIds();
-      renderQueueItem(currentQueueItem);
       await renderSyncStats();
       await renderHistory();
     }
@@ -778,7 +785,7 @@ $<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
   withBusy("btn-sync-missing", async () => {
     if (!guard()) return;
     $<HTMLDivElement>("dev-log").textContent = "";
-    await api.request.downloadAll({});
+    await api.request.downloadMissing({});
     await refreshDownloadedIds();
     await renderSyncStats();
   }),

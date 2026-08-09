@@ -19,6 +19,8 @@ import {
   downloadLikesStream,
   fetchFlatEntries,
   fetchLikes,
+  renderFilenameTemplate,
+  scanAudioStems,
 } from "../download";
 import {
   appendHistory,
@@ -26,6 +28,7 @@ import {
   BIN_DIR,
   loadConfig,
   loadLikesCache,
+  purgeArchiveIds,
   readArchiveIds,
   readHistory,
   saveConfig,
@@ -382,7 +385,13 @@ export class Service {
     return cached ? { tracks: cached.tracks, cachedAt: cached.cachedAt } : { tracks: [], cachedAt: null };
   }
 
-  /** Cuenta cuántos favoritos ya están descargados y cuántos faltan. */
+  /** "Stems" de los ficheros de audio presentes en la carpeta de salida. */
+  private downloadedStems(): Set<string> {
+    return scanAudioStems(this.config.outdir || DEFAULT_OUTDIR);
+  }
+
+  /** Cuenta cuántos favoritos ya están descargados y cuántos faltan, mirando
+   *  los ficheros reales en disco (no solo el archivo de sincronización). */
   async getSyncStats(): Promise<SyncStatsPayload> {
     let tracks = this.getLikesCache().tracks;
     if (tracks.length === 0) {
@@ -392,8 +401,11 @@ export class Service {
         tracks = [];
       }
     }
-    const ids = readArchiveIds();
-    const downloaded = tracks.filter((t) => ids.has(t.id)).length;
+    const template = this.getFilenameTemplate(this.config);
+    const stems = this.downloadedStems();
+    const downloaded = tracks.filter((t) =>
+      stems.has(renderFilenameTemplate(template, t)),
+    ).length;
     return {
       total: tracks.length,
       downloaded,
@@ -401,9 +413,15 @@ export class Service {
     };
   }
 
-  /** Ids de las canciones ya descargadas (archivo de sincronización). */
+  /** Ids de las canciones descargadas (según los ficheros en disco). */
   getDownloadedIds(): { ids: string[] } {
-    return { ids: [...readArchiveIds()] };
+    const template = this.getFilenameTemplate(this.config);
+    const stems = this.downloadedStems();
+    return {
+      ids: this.getLikesCache()
+        .tracks.filter((t) => stems.has(renderFilenameTemplate(template, t)))
+        .map((t) => t.id),
+    };
   }
 
   private getLikesCount(): number | null {
@@ -424,6 +442,33 @@ export class Service {
     return this.runDownload(
       buildDownloadArgs(this.downloadOpts(config, outDir)),
       this.msg("dl.allFavorites"),
+    );
+  }
+
+  /** Re-descarga solo las favoritas cuyos ficheros faltan en la carpeta. */
+  async downloadMissing(): Promise<{ ok: boolean; code: number }> {
+    const config = this.requireDownloadConfig();
+    const outDir = config.outdir || DEFAULT_OUTDIR;
+    fs.mkdirSync(outDir, { recursive: true });
+    const tracks = this.getLikesCache().tracks;
+    const template = this.getFilenameTemplate(config);
+    const stems = scanAudioStems(outDir);
+    const missing = tracks.filter(
+      (t) => !stems.has(renderFilenameTemplate(template, t)),
+    );
+    if (missing.length === 0) {
+      throw new Error(this.msg("dl.nothingMissing"));
+    }
+    // Los ids faltantes pueden seguir en el archivo de sincronización (p. ej.
+    // si el usuario borró los ficheros); se purgan para que yt-dlp los
+    // vuelva a descargar en vez de saltárselos.
+    purgeArchiveIds(missing.map((t) => t.id));
+    return this.runDownload(
+      buildDownloadArgs({
+        ...this.downloadOpts(config, outDir),
+        urls: missing.map((t) => t.url),
+      }),
+      this.msg("dl.downloadingMissing", { count: missing.length }),
     );
   }
 

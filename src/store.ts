@@ -128,6 +128,26 @@ export function readArchiveIds(): Set<string> {
   return ids;
 }
 
+/** Quita del archivo de sincronización los ids indicados (p. ej. porque sus
+ *  ficheros ya no existen en disco y hay que volver a descargarlos). */
+export function purgeArchiveIds(ids: Set<string> | string[]): void {
+  const toPurge = new Set(ids);
+  if (toPurge.size === 0) return;
+  try {
+    const text = fs.readFileSync(ARCHIVE_FILE, 'utf8');
+    const kept = text
+      .split('\n')
+      .filter((line) => {
+        const id = line.trim().split(/\s+/).pop();
+        return !(id && toPurge.has(id));
+      })
+      .join('\n');
+    fs.writeFileSync(ARCHIVE_FILE, kept);
+  } catch {
+    // sin archivo todavía: nada que purgar
+  }
+}
+
 export function appendHistory(item: HistoryItem): void {
   try {
     fs.mkdirSync(SND_DIR, { recursive: true });
