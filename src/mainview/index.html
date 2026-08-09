@@ -1062,53 +1062,6 @@
       </div>
     </div>
 
-    <!-- Modal: aviso de calidad de streaming -->
-    <div
-      id="quality-modal"
-      class="hidden fixed inset-0 z-40 flex items-center justify-center p-4"
-    >
-      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" data-close-quality></div>
-      <div
-        class="relative w-full max-w-sm rounded-2xl border border-ink-700 bg-ink-900 p-5 shadow-2xl shadow-black/50"
-      >
-        <h3 class="font-display text-lg font-semibold text-white" data-i18n="quality.title">
-          Descarga en calidad estándar
-        </h3>
-        <p class="text-sm text-ink-400 mt-2 leading-relaxed" data-i18n="quality.body">
-          Tu cuenta no puede descargar en alta calidad. Para descargar en la
-          máxima calidad (256 kbps AAC) necesitas una suscripción Go+ o Next
-          Pro de SoundCloud.
-        </p>
-        <label class="flex items-center gap-2 text-xs text-ink-300 mt-4 cursor-pointer select-none">
-          <input id="quality-dismiss" type="checkbox" class="w-4 h-4 rounded accent-brand-500" />
-          <span data-i18n="quality.dontShowAgain">No volver a mostrar este aviso</span>
-        </label>
-        <div class="flex justify-end gap-2 mt-5">
-          <button
-            id="quality-close"
-            class="px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
-            data-i18n="common.close"
-          >
-            Cerrar
-          </button>
-          <button
-            id="quality-recheck"
-            class="px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
-            data-i18n="quality.recheck"
-          >
-            Comprobar de nuevo
-          </button>
-          <button
-            id="quality-open-settings"
-            class="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white transition-all"
-            data-i18n="quality.plans"
-          >
-            Ver planes
-          </button>
-        </div>
-      </div>
-    </div>
-
     <script src="views://mainview/index.js"></script>
   </body>
 </html>

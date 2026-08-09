@@ -35,8 +35,6 @@ export interface ConfigPayload {
   theme?: string;
   /** Idioma de la interfaz: 'es' | 'en' (por defecto se detecta del sistema). */
   lang?: string;
-  /** true si el usuario descartó el aviso de calidad de streaming. */
-  qualityWarningDismissed?: boolean;
   skipExisting?: boolean;
   hasToken: boolean;
 }

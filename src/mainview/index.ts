@@ -185,80 +185,6 @@ let currentQueueItem: QueueItem | null = null;
 let downloadedIds = new Set<string>();
 const downloadButtons = new Map<string, HTMLButtonElement>();
 
-// Última configuración conocida (para avisos como el de calidad de streaming).
-let currentConfig: ConfigPayload | null = null;
-
-// ---- Calidad de streaming ----
-let qualityPrompted = false;
-
-async function checkStreamingQualityPrompt(force = false): Promise<void> {
-  if (!isApp) return;
-  if (qualityPrompted && !force) return;
-  if (currentConfig?.qualityWarningDismissed) return;
-  try {
-    const r = await api.request.checkStreamingQuality({});
-    if (!r.checked) return;
-    qualityPrompted = true;
-    if (r.highQuality) return;
-    openQualityModal();
-  } catch {
-    // sin red u otro fallo: se ignora
-  }
-}
-
-function openQualityModal(): void {
-  $<HTMLElement>("quality-modal").classList.remove("hidden");
-  $<HTMLInputElement>("quality-dismiss").checked = false;
-}
-
-function closeQualityModal(): void {
-  $<HTMLElement>("quality-modal").classList.add("hidden");
-}
-
-function qualityDismissIfChecked(): void {
-  if (!isApp) return;
-  if ($<HTMLInputElement>("quality-dismiss").checked) {
-    api.request.saveConfig({ qualityWarningDismissed: true }).catch(() => {});
-  }
-}
-
-$<HTMLButtonElement>("quality-close").addEventListener("click", () => {
-  closeQualityModal();
-  qualityDismissIfChecked();
-});
-document
-  .querySelectorAll<HTMLElement>("[data-close-quality]")
-  .forEach((el) =>
-    el.addEventListener("click", () => {
-      closeQualityModal();
-      qualityDismissIfChecked();
-    }),
-  );
-
-$<HTMLButtonElement>("quality-recheck").addEventListener("click", () =>
-  withBusy("quality-recheck", async () => {
-    if (!isApp) return;
-    try {
-      const r = await api.request.checkStreamingQuality({});
-      if (r.checked && r.highQuality) {
-        closeQualityModal();
-        toast(T("quality.highQuality"), "success");
-      } else {
-        toast(T("quality.stillStandard"), "info");
-      }
-    } catch {
-      toast(T("quality.checkFailed"), "warn");
-    }
-  }),
-);
-
-$<HTMLButtonElement>("quality-open-settings").addEventListener("click", () => {
-  if (!isApp) return;
-  api.request
-    .openExternal({ url: "https://soundcloud.com/pricing" })
-    .catch(() => {});
-});
-
 /** Muestra en Ajustes la calidad de descarga disponible de la cuenta. */
 async function renderStreamingQualityStatus(): Promise<void> {
   const dot = $<HTMLElement>("quality-status-dot");
@@ -1082,7 +1008,6 @@ async function loadStatus(): Promise<StatusSnapshot | null> {
   }
   try {
     const s: StatusSnapshot = await api.request.getStatus({});
-    currentConfig = s.config;
     renderDeps(s.deps);
     renderAccount(s.config);
     renderLikes(s.likesCount);
@@ -1142,7 +1067,6 @@ $<HTMLButtonElement>("btn-login").addEventListener("click", () =>
       await api.request.login({});
       toast(T("toast.sessionStarted"), "success");
       await loadStatus();
-      checkStreamingQualityPrompt(true);
     } catch (err) {
       toast((err as Error).message, "error", true);
       openTokenModal();
@@ -1187,7 +1111,6 @@ $<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
     closeTokenModal();
     toast(T("toast.tokenSaved"), "success");
     await loadStatus();
-    checkStreamingQualityPrompt(true);
   }),
 );
 
@@ -2080,7 +2003,6 @@ refreshDownloadedIds();
 initAbout();
 (async () => {
   let s = await loadStatus();
-  checkStreamingQualityPrompt();
   if (s && !s.deps.ready) {
     await runDepsInstall();
     s = await loadStatus();
