@@ -1853,9 +1853,6 @@ async function initAbout(): Promise<void> {
   if (!isApp) return;
   try {
     const info = await api.request.getAppInfo({});
-    const suffix =
-      info.channel && info.channel !== "stable" ? ` (${info.channel})` : "";
-    $<HTMLElement>("about-version").textContent = `v${info.version}${suffix}`;
     $<HTMLElement>("about-repo").dataset.openUrl = info.repo;
     $<HTMLElement>("about-license").dataset.openUrl = info.licenseUrl;
   } catch {
