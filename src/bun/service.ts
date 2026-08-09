@@ -39,8 +39,7 @@ import {
   type LikedTrack,
 } from "../store";
 import { clearSoundCloudSession } from "./login";
-import { checkHighQualityStreaming } from "../scquality";
-import { runStream, type ProcessController, type RunStreamOpts } from "../util";
+import { run, runStream, type ProcessController, type RunStreamOpts } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
   AppInfoPayload,
@@ -511,9 +510,9 @@ export class Service {
     }
   }
 
-  /** Comprueba si la cuenta puede descargar en alta calidad (transcodings hq).
-   *  Usa un favorito de la caché si hay; si no, scquality obtiene el primer
-   *  favorito vía la API de SoundCloud. */
+  /** Comprueba si la cuenta puede descargar en alta calidad. Usa yt-dlp (que
+   *  pasa DataDome, igual que las descargas) sobre un favorito y mira si hay
+   *  formatos >= 256 kbps / Premium. */
   async checkStreamingQuality(): Promise<{
     checked: boolean;
     highQuality: boolean;
@@ -522,13 +521,44 @@ export class Service {
     if (!this.config.oauthToken) {
       return { checked: false, highQuality: false, error: "sin sesión" };
     }
-    const track = this.getLikesCache().tracks[0];
+    const trackUrl = this.getLikesCache().tracks[0]?.url;
+    if (!trackUrl) {
+      return { checked: false, highQuality: false, error: "Sin favoritos" };
+    }
     try {
-      const highQuality = await checkHighQualityStreaming({
-        oauthToken: this.config.oauthToken,
-        trackId: track?.id,
-        trackUrl: track?.url,
-      });
+      const ytdlp =
+        this.deps?.ytdlp ?? Bun.which("yt-dlp") ?? path.join(BIN_DIR, "yt-dlp");
+      if (!fs.existsSync(ytdlp)) {
+        throw new Error("yt-dlp no está instalado");
+      }
+      const cookiesFile = writeCookiesFile(this.config.oauthToken);
+      const { code, stdout, stderr } = await run(
+        [
+          ytdlp,
+          "--cookies",
+          cookiesFile,
+          "--impersonate",
+          "chrome",
+          "--skip-download",
+          "-J",
+          trackUrl,
+        ],
+        { capture: true },
+      );
+      if (code !== 0) {
+        throw new Error(stderr.trim().slice(-200) || `yt-dlp ${code}`);
+      }
+      const info = JSON.parse(stdout);
+      const formats: {
+        abr?: number;
+        format_note?: string;
+        format_id?: string;
+      }[] = info?.formats ?? [];
+      const highQuality = formats.some(
+        (f) =>
+          (f?.abr ?? 0) >= 256 ||
+          /premium|256k/i.test(`${f?.format_note ?? ""} ${f?.format_id ?? ""}`),
+      );
       return { checked: true, highQuality };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
