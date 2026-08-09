@@ -860,9 +860,7 @@ function seedSettings(c: ConfigPayload): void {
   $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
   $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
   $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
-  renderTemplateToEditor(
-    c.filenameTemplate ?? "%(uploader)s - %(title)s [%(id)s]",
-  );
+  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s");
   updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");

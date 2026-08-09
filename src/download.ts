@@ -33,7 +33,7 @@ export interface DownloadOptions extends Session {
   archiveFile?: string;
 }
 
-export const DEFAULT_FILENAME_TEMPLATE = '%(uploader)s - %(title)s [%(id)s]';
+export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s';
 
 const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'];
 

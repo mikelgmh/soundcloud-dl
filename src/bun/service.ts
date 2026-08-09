@@ -65,6 +65,9 @@ export type LoginBrowserFn = (
 
 const DEFAULT_OUTDIR = path.join(os.homedir(), "Music", "SoundCloud");
 
+// Formato antiguo por defecto: si quedó guardado en config, se migra.
+const LEGACY_TEMPLATE = "%(uploader)s - %(title)s [%(id)s]";
+
 class DownloadTracker {
   private lastEmit = 0;
   private state: DownloadProgressPayload = {
@@ -241,6 +244,12 @@ export class Service {
     return this.toConfigPayload(next);
   }
 
+  private getFilenameTemplate(c: Config): string {
+    return c.filenameTemplate && c.filenameTemplate !== LEGACY_TEMPLATE
+      ? c.filenameTemplate
+      : DEFAULT_FILENAME_TEMPLATE;
+  }
+
   private toConfigPayload(c: Config): ConfigPayload {
     return {
       ...c,
@@ -248,7 +257,7 @@ export class Service {
       quality: c.quality ?? '320K',
       format: c.format ?? 'mp3',
       bitrate: c.bitrate ?? c.quality ?? '320K',
-      filenameTemplate: c.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE,
+      filenameTemplate: this.getFilenameTemplate(c),
       theme: c.theme ?? 'dark',
       skipExisting: c.skipExisting ?? true,
       hasToken: !!c.oauthToken,
@@ -537,8 +546,7 @@ export class Service {
       outDir,
       format: config.format ?? "mp3",
       bitrate: config.bitrate ?? config.quality ?? "320K",
-      filenameTemplate:
-        config.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE,
+      filenameTemplate: this.getFilenameTemplate(config),
       skipExisting: config.skipExisting ?? true,
       cookiesFile: writeCookiesFile(config.oauthToken!),
       username: config.username!,
