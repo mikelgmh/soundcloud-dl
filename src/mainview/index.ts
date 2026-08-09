@@ -121,7 +121,14 @@ function updateStatus(stage: string, message: string): void {
   if (stage === "download") {
     $<HTMLParagraphElement>("dl-stage").textContent = message;
     const done = /completada|código|erro/i.test(message);
-    $<HTMLButtonElement>("btn-cancel").classList.toggle("hidden", done);
+    if (done) {
+      // La descarga ha terminado: el bloque vuelve al estado vacío.
+      setDownloading(false);
+      resetDownloadUI();
+    } else {
+      setDownloading(true);
+      $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+    }
     if (/completada/i.test(message)) {
       toast(message, "success");
     } else if (done) {
@@ -192,6 +199,10 @@ $<HTMLButtonElement>("deps-retry").addEventListener("click", () =>
 );
 
 function updateProgress(p: DownloadProgressPayload): void {
+  trackCurrent = p.current || 0;
+  trackTotal = p.total || 0;
+  setDownloading(true);
+
   $<HTMLParagraphElement>("dl-title").textContent =
     p.title || "Preparando...";
   $<HTMLSpanElement>("dl-meta").textContent = p.eta ? `ETA ${p.eta}` : "";
@@ -204,6 +215,37 @@ function updateProgress(p: DownloadProgressPayload): void {
       ? "Descargando..."
       : "Preparando...";
   $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+}
+
+// ---- Estado de descarga ----
+let downloading = false;
+let trackCurrent = 0;
+let trackTotal = 0;
+
+function setDownloading(value: boolean): void {
+  downloading = value;
+  const banner = $<HTMLElement>("download-banner");
+  const text = $<HTMLElement>("download-banner-text");
+  if (value) {
+    banner.classList.remove("hidden");
+    text.textContent =
+      trackTotal > 0
+        ? `Descargando ${trackCurrent} de ${trackTotal} canciones`
+        : "Descargando canciones...";
+  } else {
+    banner.classList.add("hidden");
+    trackCurrent = 0;
+    trackTotal = 0;
+  }
+}
+
+function resetDownloadUI(): void {
+  $<HTMLDivElement>("dl-bar").style.width = "0%";
+  $<HTMLSpanElement>("dl-percent").textContent = "0%";
+  $<HTMLParagraphElement>("dl-count").textContent = "Sin descargas activas";
+  $<HTMLParagraphElement>("dl-title").textContent = "—";
+  $<HTMLSpanElement>("dl-meta").textContent = "";
+  $<HTMLButtonElement>("btn-cancel").classList.add("hidden");
 }
 
 // ---- Navegación ----
@@ -561,7 +603,10 @@ $<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
 );
 
 $<HTMLButtonElement>("btn-cancel").addEventListener("click", () => {
-  if (guard()) api.request.cancelDownload({});
+  if (!guard()) return;
+  setDownloading(false);
+  resetDownloadUI();
+  api.request.cancelDownload({});
 });
 
 // ---- Búsqueda ----
@@ -1177,8 +1222,11 @@ function collectionTrackRow(t: LikedTrackPayload): HTMLElement {
 function startDownloadView(label: string): void {
   showView("download");
   $<HTMLDivElement>("dev-log").textContent = "";
+  resetDownloadUI();
   $<HTMLParagraphElement>("dl-title").textContent = label;
+  $<HTMLParagraphElement>("dl-count").textContent = "Preparando...";
   $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+  setDownloading(true);
 }
 
 async function renderCollectionFavorites(): Promise<void> {
@@ -1384,6 +1432,7 @@ $<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
 });
 
 // ---- Arranque ----
+resetDownloadUI();
 showView("status");
 (async () => {
   let s = await loadStatus();

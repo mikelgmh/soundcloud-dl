@@ -85,6 +85,9 @@ class DownloadTracker {
     if (item) {
       this.state.current = Number(item[1]);
       this.state.total = Number(item[2]);
+      // Cada canción nueva empieza su propio progreso.
+      this.state.percent = 0;
+      this.state.eta = "";
     }
     const pct = line.match(/\[download\]\s+([\d.]+)%/);
     if (pct) this.state.percent = parseFloat(pct[1]);

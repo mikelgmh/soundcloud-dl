@@ -21,6 +21,17 @@
       class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none"
     ></div>
 
+    <!-- Aviso de descarga en curso -->
+    <div
+      id="download-banner"
+      class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 rounded-full border border-brand-500/40 bg-ink-900/95 backdrop-blur px-4 py-2 shadow-xl shadow-black/40"
+    >
+      <span class="spinner spinner-accent"></span>
+      <span id="download-banner-text" class="text-sm text-ink-100 tabular-nums">
+        Descargando canciones...
+      </span>
+    </div>
+
     <div class="flex h-screen overflow-hidden">
       <!-- Sidebar -->
       <aside
