@@ -39,6 +39,7 @@ import {
   type LikedTrack,
 } from "../store";
 import { clearSoundCloudSession } from "./login";
+import { checkHighQualityStreaming } from "../scquality";
 import { runStream, type ProcessController, type RunStreamOpts } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
@@ -507,6 +508,34 @@ export class Service {
       return { ok: true };
     } catch {
       return { ok: false };
+    }
+  }
+
+  /** Comprueba si la cuenta tiene activo el streaming de alta calidad
+   *  (transcodings hq). Requiere sesión y al menos un favorito para probar. */
+  async checkStreamingQuality(): Promise<{
+    checked: boolean;
+    highQuality: boolean;
+  }> {
+    if (!this.config.oauthToken) return { checked: false, highQuality: false };
+    let tracks = this.getLikesCache().tracks;
+    if (tracks.length === 0) {
+      try {
+        tracks = (await this.refreshLikes()).tracks;
+      } catch {
+        tracks = [];
+      }
+    }
+    const trackUrl = tracks[0]?.url;
+    if (!trackUrl) return { checked: false, highQuality: false };
+    try {
+      const highQuality = await checkHighQualityStreaming({
+        oauthToken: this.config.oauthToken,
+        trackUrl,
+      });
+      return { checked: true, highQuality };
+    } catch {
+      return { checked: false, highQuality: false };
     }
   }
 

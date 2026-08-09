@@ -185,6 +185,80 @@ let currentQueueItem: QueueItem | null = null;
 let downloadedIds = new Set<string>();
 const downloadButtons = new Map<string, HTMLButtonElement>();
 
+// Última configuración conocida (para avisos como el de calidad de streaming).
+let currentConfig: ConfigPayload | null = null;
+
+// ---- Calidad de streaming ----
+let qualityPrompted = false;
+
+async function checkStreamingQualityPrompt(force = false): Promise<void> {
+  if (!isApp) return;
+  if (qualityPrompted && !force) return;
+  if (currentConfig?.qualityWarningDismissed) return;
+  try {
+    const r = await api.request.checkStreamingQuality({});
+    if (!r.checked) return;
+    qualityPrompted = true;
+    if (r.highQuality) return;
+    openQualityModal();
+  } catch {
+    // sin red u otro fallo: se ignora
+  }
+}
+
+function openQualityModal(): void {
+  $<HTMLElement>("quality-modal").classList.remove("hidden");
+  $<HTMLInputElement>("quality-dismiss").checked = false;
+}
+
+function closeQualityModal(): void {
+  $<HTMLElement>("quality-modal").classList.add("hidden");
+}
+
+function qualityDismissIfChecked(): void {
+  if (!isApp) return;
+  if ($<HTMLInputElement>("quality-dismiss").checked) {
+    api.request.saveConfig({ qualityWarningDismissed: true }).catch(() => {});
+  }
+}
+
+$<HTMLButtonElement>("quality-close").addEventListener("click", () => {
+  closeQualityModal();
+  qualityDismissIfChecked();
+});
+document
+  .querySelectorAll<HTMLElement>("[data-close-quality]")
+  .forEach((el) =>
+    el.addEventListener("click", () => {
+      closeQualityModal();
+      qualityDismissIfChecked();
+    }),
+  );
+
+$<HTMLButtonElement>("quality-recheck").addEventListener("click", () =>
+  withBusy("quality-recheck", async () => {
+    if (!isApp) return;
+    try {
+      const r = await api.request.checkStreamingQuality({});
+      if (r.checked && r.highQuality) {
+        closeQualityModal();
+        toast(T("quality.highQuality"), "success");
+      } else {
+        toast(T("quality.stillStandard"), "info");
+      }
+    } catch {
+      toast(T("quality.checkFailed"), "warn");
+    }
+  }),
+);
+
+$<HTMLButtonElement>("quality-open-settings").addEventListener("click", () => {
+  if (!isApp) return;
+  api.request
+    .openExternal({ url: "https://soundcloud.com/settings/streaming" })
+    .catch(() => {});
+});
+
 // ---- Toasts ----
 function toast(
   message: string,
@@ -968,6 +1042,7 @@ async function loadStatus(): Promise<StatusSnapshot | null> {
   }
   try {
     const s: StatusSnapshot = await api.request.getStatus({});
+    currentConfig = s.config;
     renderDeps(s.deps);
     renderAccount(s.config);
     renderLikes(s.likesCount);
@@ -1027,6 +1102,7 @@ $<HTMLButtonElement>("btn-login").addEventListener("click", () =>
       await api.request.login({});
       toast(T("toast.sessionStarted"), "success");
       await loadStatus();
+      checkStreamingQualityPrompt(true);
     } catch (err) {
       toast((err as Error).message, "error", true);
       openTokenModal();
@@ -1071,6 +1147,7 @@ $<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
     closeTokenModal();
     toast(T("toast.tokenSaved"), "success");
     await loadStatus();
+    checkStreamingQualityPrompt(true);
   }),
 );
 
@@ -1403,12 +1480,27 @@ function updateBitrateState(): void {
 
 $<HTMLSelectElement>("set-format").addEventListener("change", updateBitrateState);
 
+function setOutdirError(show: boolean): void {
+  const input = $<HTMLInputElement>("set-outdir");
+  const err = $<HTMLElement>("set-outdir-error");
+  input.classList.toggle("border-red-500", show);
+  input.classList.toggle("focus:border-red-500", show);
+  input.classList.toggle("border-ink-700", !show);
+  input.classList.toggle("focus:border-brand-500", !show);
+  err.classList.toggle("hidden", !show);
+}
+
+$<HTMLInputElement>("set-outdir").addEventListener("input", () => {
+  if ($<HTMLInputElement>("set-outdir").value.trim()) setOutdirError(false);
+});
+
 $<HTMLButtonElement>("btn-pick-folder").addEventListener("click", () =>
   withBusy("btn-pick-folder", async () => {
     if (!guard()) return;
     const res = await api.request.selectFolder({});
     if (res.path) {
       $<HTMLInputElement>("set-outdir").value = res.path;
+      setOutdirError(false);
     }
   }),
 );
@@ -1416,6 +1508,13 @@ $<HTMLButtonElement>("btn-pick-folder").addEventListener("click", () =>
 $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
   withBusy("btn-save-settings", async () => {
     if (!guard()) return;
+    const outdir = $<HTMLInputElement>("set-outdir").value.trim();
+    if (!outdir) {
+      setOutdirError(true);
+      toast(T("settings.outdirEmpty"), "warn");
+      $<HTMLInputElement>("set-outdir").focus();
+      return;
+    }
     const template = serializeEditor().trim();
     if (!template) {
       toast(T("settings.templateEmpty"), "warn");
@@ -1426,7 +1525,7 @@ $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
       return;
     }
     await api.request.saveConfig({
-      outdir: $<HTMLInputElement>("set-outdir").value.trim(),
+      outdir,
       format: $<HTMLSelectElement>("set-format").value,
       bitrate: $<HTMLSelectElement>("set-bitrate").value,
       filenameTemplate: template,
@@ -1941,6 +2040,7 @@ refreshDownloadedIds();
 initAbout();
 (async () => {
   let s = await loadStatus();
+  checkStreamingQualityPrompt();
   if (s && !s.deps.ready) {
     await runDepsInstall();
     s = await loadStatus();

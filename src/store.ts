@@ -52,6 +52,8 @@ export interface Config {
   theme?: 'dark' | 'light';
   /** Idioma de la interfaz: 'es' | 'en' (por defecto se detecta del sistema). */
   lang?: 'es' | 'en';
+  /** true si el usuario descartó el aviso de calidad de streaming. */
+  qualityWarningDismissed?: boolean;
   skipExisting?: boolean;
 }
 
