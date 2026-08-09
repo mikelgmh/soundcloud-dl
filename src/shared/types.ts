@@ -33,6 +33,8 @@ export interface ConfigPayload {
   filenameTemplate?: string;
   /** Tema: 'dark' | 'light' */
   theme?: string;
+  /** Idioma de la interfaz: 'es' | 'en' (por defecto se detecta del sistema). */
+  lang?: string;
   skipExisting?: boolean;
   hasToken: boolean;
 }

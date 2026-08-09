@@ -10,6 +10,57 @@ import type {
   LogLevel,
   StatusSnapshot,
 } from "../shared/types";
+import {
+  LANG_LABELS,
+  resolveLang,
+  SUPPORTED_LANGS,
+  t,
+  type Lang,
+  type Vars,
+} from "../shared/i18n";
+
+// ---- Internacionalización ----
+let currentLang: Lang = resolveLang();
+/** true cuando el usuario cambia el idioma a mano; evita que seedSettings lo
+ *  revierta al idioma guardado en la config antes de pulsar "Guardar". */
+let langUserSet = false;
+
+/** Traduce con la lengua activa (shortcut). */
+function T(key: string, vars?: Vars): string {
+  return t(currentLang, key, vars);
+}
+
+/** Aplica las traducciones a los elementos estáticos del DOM. */
+function applyStaticTranslations(): void {
+  document.documentElement.lang = currentLang;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
+    el.textContent = T(el.dataset.i18n!);
+  }
+  for (const el of document.querySelectorAll<HTMLElement>("[data-i18n-ph]")) {
+    el.setAttribute("placeholder", T(el.dataset.i18nPh!));
+  }
+  for (const el of document.querySelectorAll<HTMLElement>("[data-i18n-title]")) {
+    el.setAttribute("title", T(el.dataset.i18nTitle!));
+  }
+}
+
+/** Cambia la lengua activa. Con reRender=true (solo cambio de usuario) se
+ *  re-renderiza la interfaz dinámica. seedSettings la llama con false para
+ *  evitar recursión con loadStatus. */
+function setLang(lang: Lang, reRender = false): void {
+  currentLang = lang;
+  applyStaticTranslations();
+  renderLanguageSelect();
+  if (reRender && isApp) {
+    loadStatus();
+    renderSyncStats();
+    renderHistory();
+    renderQueue();
+    renderStats();
+    renderCollection();
+    refreshDownloadedIds();
+  }
+}
 
 let api: AppRPCSchema extends never ? never : any = null;
 
@@ -194,7 +245,7 @@ function escapeHtml(s: string): string {
 function appendLog(level: string, text: string): void {
   if (level === "error") toast(text, "error", true);
   const log = $<HTMLDivElement>("dev-log");
-  if (log.firstChild?.textContent?.includes("El registro de yt-dlp")) {
+  if (log.firstChild?.textContent?.includes("yt-dlp")) {
     log.textContent = "";
   }
   const line = document.createElement("div");
@@ -259,7 +310,7 @@ function showDepsModal(): void {
   $<HTMLElement>("deps-spinner").classList.remove("hidden");
   $<HTMLElement>("deps-modal-error").classList.add("hidden");
   $<HTMLElement>("deps-modal-actions").classList.add("hidden");
-  setDepsModalStatus("Comprobando...");
+  setDepsModalStatus(T("depsModal.checking"));
 }
 
 function hideDepsModal(): void {
@@ -287,7 +338,7 @@ async function runDepsInstall(): Promise<void> {
   try {
     await api.request.installDeps({});
     hideDepsModal();
-    toast("Dependencias listas", "success");
+    toast(T("toast.depsReady"), "success");
     await loadStatus();
   } catch (err) {
     showDepsModalError(err instanceof Error ? err.message : String(err));
@@ -311,7 +362,7 @@ function showUpdateModal(version?: string): void {
   $<HTMLElement>("update-icon").classList.remove("hidden");
   const btn = $<HTMLButtonElement>("btn-apply-update");
   btn.disabled = false;
-  btn.textContent = "Actualizar";
+  btn.textContent = T("update.apply");
 }
 
 function setUpdateModalStatus(msg: string): void {
@@ -323,14 +374,14 @@ function setUpdateModalStatus(msg: string): void {
 
 $<HTMLButtonElement>("btn-apply-update").addEventListener("click", async () => {
   if (!isApp) return;
-  setUpdateModalStatus("Descargando...");
+  setUpdateModalStatus(T("update.downloadingShort"));
   const r = await api.request.applyAppUpdate({});
   if (!r.ok) {
     $<HTMLElement>("update-spinner").classList.add("hidden");
     $<HTMLElement>("update-icon").classList.remove("hidden");
     const btn = $<HTMLButtonElement>("btn-apply-update");
     btn.disabled = false;
-    btn.textContent = "Reintentar";
+    btn.textContent = T("update.retry");
   }
 });
 
@@ -342,10 +393,10 @@ $<HTMLButtonElement>("btn-check-update").addEventListener("click", async () => {
     if (r.updateAvailable) {
       showUpdateModal(r.version);
     } else {
-      toast("Ya tienes la última versión", "success");
+      toast(T("update.upToDate"), "success");
     }
   } catch {
-    toast("No se pudo comprobar si hay actualizaciones", "warn");
+    toast(T("update.checkFailed"), "warn");
   }
 });
 
@@ -360,16 +411,16 @@ function updateProgress(p: DownloadProgressPayload): void {
   }
 
   $<HTMLParagraphElement>("dl-title").textContent =
-    p.title || "Preparando...";
-  setAnimatedText($<HTMLSpanElement>("dl-meta"), p.eta ? `ETA ${p.eta}` : "");
+    p.title || T("dl.prepare");
+  setAnimatedText($<HTMLSpanElement>("dl-meta"), p.eta ? T("dl.eta", { eta: p.eta }) : "");
   $<HTMLDivElement>("dl-bar").style.width = `${Math.min(100, p.percent)}%`;
   setAnimatedText($<HTMLSpanElement>("dl-percent"), `${Math.round(p.percent)}%`);
   const total = p.total || 0;
   setAnimatedText($<HTMLParagraphElement>("dl-count"), total
-    ? `Canción ${p.current || 0} de ${total}`
+    ? T("dl.trackOf", { current: p.current || 0, total })
     : p.percent > 0
-      ? "Descargando..."
-      : "Preparando...");
+      ? T("dl.downloading")
+      : T("dl.prepare"));
   showDlControls();
 }
 
@@ -386,8 +437,8 @@ function setDownloading(value: boolean): void {
     el.classList.remove("hidden");
     setAnimatedText(text,
       trackTotal > 0
-        ? `Descargando ${trackCurrent} de ${trackTotal} canciones`
-        : "Descargando canciones...");
+        ? T("dl.downloadingTracks", { current: trackCurrent, total: trackTotal })
+        : T("dl.downloadingGeneric"));
   } else {
     el.classList.add("hidden");
     trackCurrent = 0;
@@ -398,7 +449,7 @@ function setDownloading(value: boolean): void {
 function resetDownloadUI(): void {
   $<HTMLDivElement>("dl-bar").style.width = "0%";
   setAnimatedText($<HTMLSpanElement>("dl-percent"), "0%");
-  setAnimatedText($<HTMLParagraphElement>("dl-count"), "Sin descargas activas");
+  setAnimatedText($<HTMLParagraphElement>("dl-count"), T("downloads.idle"));
   $<HTMLParagraphElement>("dl-title").textContent = "—";
   setAnimatedText($<HTMLSpanElement>("dl-meta"), "");
   hideDlControls();
@@ -414,7 +465,7 @@ function hideDlControls(): void {
   const controls = $<HTMLElement>("dl-controls");
   controls.classList.add("hidden");
   controls.classList.remove("flex");
-  $<HTMLButtonElement>("btn-pause").textContent = "Pausar";
+  $<HTMLButtonElement>("btn-pause").textContent = T("dl.pause");
 }
 
 // ---- Cola: botones con estado ----
@@ -438,7 +489,7 @@ function renderQueueItem(item: QueueItem): void {
   if (item.status === "queued") {
     btn.disabled = true;
     btn.className = DL_BTN_BASE + " opacity-60 cursor-default";
-    btn.textContent = "En cola";
+    btn.textContent = T("dl.queued");
   } else if (item.status === "downloading") {
     btn.disabled = true;
     btn.className = DL_BTN_BASE + " cursor-default";
@@ -450,12 +501,12 @@ function renderQueueItem(item: QueueItem): void {
     } else {
       btn.disabled = false;
       btn.className = DL_BTN_BASE;
-      btn.textContent = "Descargar";
+      btn.textContent = T("dl.single");
     }
   } else {
     btn.disabled = false;
     btn.className = DL_BTN_BASE;
-    btn.textContent = "Descargar";
+    btn.textContent = T("dl.single");
   }
   updateQueueRowStatus(item);
 }
@@ -469,11 +520,11 @@ function setDownloadedButtonState(
     btn.className = DL_BTN_BASE + " opacity-50 cursor-default";
     btn.innerHTML =
       `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="inline-block align-middle"><path d="m5 13 4 4L19 7"/></svg>` +
-      `<span>Descargada</span>`;
+      `<span>${T("dl.downloaded")}</span>`;
   } else {
     btn.disabled = false;
     btn.className = DL_BTN_BASE;
-    btn.textContent = "Descargar";
+    btn.textContent = T("dl.single");
   }
 }
 
@@ -517,7 +568,7 @@ function enqueueDownload(
     existing &&
     (existing.status === "queued" || existing.status === "downloading")
   ) {
-    toast("Esa canción ya está en la cola", "warn");
+    toast(T("dl.alreadyQueued"), "warn");
     return;
   }
   const item: QueueItem = { id, url, title, status: "queued", percent: 0, button: btn };
@@ -530,7 +581,7 @@ function enqueueDownload(
     downloadQueue.push(item);
     renderQueueItem(item);
   }
-  toast(`En cola: ${title}`, "info", false, 2200);
+  toast(T("dl.enqueued", { title }), "info", false, 2200);
   renderQueue();
   if (!processingQueue) processQueue();
 }
@@ -573,7 +624,7 @@ function makeDownloadButton(t: {
 }): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = DL_BTN_BASE;
-  btn.textContent = "Descargar";
+  btn.textContent = T("dl.single");
   downloadButtons.set(t.id, btn);
   if (downloadedIds.has(t.id)) setDownloadedButtonState(btn, true);
   btn.addEventListener("click", () =>
@@ -590,7 +641,7 @@ const queueStatusEls = new Map<string, HTMLElement>();
 function renderQueue(): void {
   const list = $<HTMLElement>("queue-list");
   const total = downloadQueue.length;
-  setAnimatedText($<HTMLElement>("queue-count"), `${total} canciones`);
+  setAnimatedText($<HTMLElement>("queue-count"), T("queue.count", { total }));
   const pages = Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE));
   if (queuePage >= pages) queuePage = pages - 1;
   const start = queuePage * QUEUE_PAGE_SIZE;
@@ -601,14 +652,14 @@ function renderQueue(): void {
   if (!slice.length) {
     const p = document.createElement("p");
     p.className = "text-xs text-ink-500";
-    p.textContent = "No hay descargas en la cola.";
+    p.textContent = T("queue.empty");
     list.appendChild(p);
   }
   slice.forEach((item, i) => list.appendChild(queueRow(item, start + i + 1)));
 
   $<HTMLButtonElement>("queue-prev").disabled = queuePage === 0;
   $<HTMLButtonElement>("queue-next").disabled = queuePage >= pages - 1;
-  setAnimatedText($<HTMLElement>("queue-page"), `${queuePage + 1} / ${pages}`);
+  setAnimatedText($<HTMLElement>("queue-page"), T("queue.page", { page: queuePage + 1, pages }));
 }
 
 function queueRow(item: QueueItem, index: number): HTMLElement {
@@ -637,7 +688,7 @@ function updateQueueRowStatus(item: QueueItem): void {
   status.className = "shrink-0 flex items-center gap-1 text-xs";
   if (item.status === "queued") {
     status.className += " text-ink-400";
-    status.textContent = "En cola";
+    status.textContent = T("dl.queued");
   } else if (item.status === "downloading") {
     status.className += " text-brand-300";
     status.innerHTML =
@@ -647,7 +698,7 @@ function updateQueueRowStatus(item: QueueItem): void {
     status.textContent = "✓";
   } else {
     status.className += " text-red-400";
-    status.textContent = "Error";
+    status.textContent = T("dl.error");
   }
 }
 
@@ -705,17 +756,17 @@ async function renderSyncStats(): Promise<void> {
       ? `${Math.min(100, (s.downloaded / s.total) * 100)}%`
       : "0%";
     setAnimatedText($<HTMLElement>("sync-count"),
-      `${s.downloaded} de ${s.total} descargadas`);
+      T("sync.count", { downloaded: s.downloaded, total: s.total }));
     const btn = $<HTMLButtonElement>("btn-sync-missing");
     if (s.missing > 0) {
       setAnimatedText($<HTMLElement>("sync-text"),
-        `Faltan ${s.missing} canciones por descargar`);
-      btn.textContent = `Descargar faltantes (${s.missing})`;
+        T("sync.missing", { missing: s.missing }));
+      btn.textContent = T("sync.downloadMissingN", { missing: s.missing });
       btn.classList.remove("opacity-50", "pointer-events-none");
     } else {
       setAnimatedText($<HTMLElement>("sync-text"),
-        "Todas tus favoritas están descargadas");
-      btn.textContent = "Sincronizado";
+        T("sync.allDone"));
+      btn.textContent = T("sync.synced");
       btn.classList.add("opacity-50", "pointer-events-none");
     }
   } catch {
@@ -753,7 +804,7 @@ async function renderHistory(): Promise<void> {
     if (!res.items.length) {
       const p = document.createElement("p");
       p.className = "text-xs text-ink-500";
-      p.textContent = "Sin descargas registradas todavía.";
+      p.textContent = T("history.empty");
       list.appendChild(p);
       return;
     }
@@ -763,7 +814,7 @@ async function renderHistory(): Promise<void> {
       const label = document.createElement("span");
       label.className = "text-ink-300 truncate";
       label.textContent =
-        it.target === "favoritos" ? "Sincronización de favoritos" : it.target;
+        it.target === "favoritos" ? T("history.favoritesSync") : it.target;
       const meta = document.createElement("span");
       meta.className = "text-ink-500 shrink-0 tabular-nums";
       const d = new Date(it.ts);
@@ -793,7 +844,7 @@ function renderVersionLine(
     const b = document.createElement("span");
     b.className =
       "px-1.5 py-0.5 rounded-md bg-brand-500/15 text-brand-300 text-[10px] font-semibold tabular-nums";
-    b.textContent = `nueva: v${v.latest}`;
+    b.textContent = `${T("version.new")} v${v.latest}`;
     el.appendChild(b);
   }
 }
@@ -805,7 +856,7 @@ function renderDeps(d: DepsStatus): void {
   ytIcon.className = d.ytdlpPresent
     ? "text-base leading-none text-emerald-400"
     : "text-base leading-none text-amber-400";
-  ytSub.textContent = d.ytdlpPath ?? (d.ytdlpPresent ? "listo" : "no instalado");
+  ytSub.textContent = d.ytdlpPath ?? (d.ytdlpPresent ? T("tools.ready") : T("tools.notInstalled"));
   $<HTMLElement>("deps-ytdlp").classList.toggle(
     "border-amber-600/40",
     !d.ytdlpPresent,
@@ -819,10 +870,10 @@ function renderDeps(d: DepsStatus): void {
     ? "text-base leading-none text-emerald-400"
     : "text-base leading-none text-amber-400";
   ffSub.textContent = d.ffmpegDir
-    ? "binario propio"
+    ? T("tools.ownBinary")
     : d.ffmpegPresent
-      ? "del sistema"
-      : "no instalado";
+      ? T("tools.systemBinary")
+      : T("tools.notInstalled");
   $<HTMLElement>("deps-ffmpeg").classList.toggle(
     "border-amber-600/40",
     !d.ffmpegPresent,
@@ -841,13 +892,13 @@ function renderAccount(c: ConfigPayload): void {
     : "w-11 h-11 rounded-xl bg-ink-800 border border-ink-700 flex items-center justify-center font-display font-semibold text-ink-400 shrink-0";
 
   $<HTMLElement>("account-text").textContent = logged
-    ? c.username || "Sesión iniciada"
-    : "No has iniciado sesión";
+    ? c.username || T("account.loggedIn")
+    : T("account.notLogged");
   $<HTMLElement>("account-user").textContent = logged
-    ? "Listo para descargar tus favoritos"
-    : "Inicia sesión para descargar tus favoritos";
+    ? T("account.readyPrompt")
+    : T("account.loginPrompt");
   const chip = $<HTMLElement>("account-chip");
-  chip.textContent = logged ? "con sesión" : "sin sesión";
+  chip.textContent = logged ? T("account.sessionChip") : T("account.noSessionChip");
   chip.className = logged
     ? "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300"
     : "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-ink-800 text-ink-400";
@@ -882,7 +933,7 @@ function applyTheme(theme: string): void {
 
 async function loadStatus(): Promise<StatusSnapshot | null> {
   if (!isApp) {
-    setSidebar(false, "Vista previa sin conexión a la app");
+    setSidebar(false, T("sidebar.preview"));
     return null;
   }
   try {
@@ -891,12 +942,12 @@ async function loadStatus(): Promise<StatusSnapshot | null> {
     renderAccount(s.config);
     renderLikes(s.likesCount);
     seedSettings(s.config);
-    if (!s.deps.ready) setSidebar(false, "Instala las dependencias");
-    else if (!s.config.hasToken) setSidebar(false, "Inicia sesión");
-    else setSidebar(true, `Listo: ${s.likesCount ?? "?"} favoritos`);
+    if (!s.deps.ready) setSidebar(false, T("sidebar.installDeps"));
+    else if (!s.config.hasToken) setSidebar(false, T("sidebar.login"));
+    else setSidebar(true, T("sidebar.ready", { count: s.likesCount ?? "?" }));
     return s;
   } catch (err) {
-    toast(`Error al cargar el estado: ${(err as Error).message}`, "error", true);
+    toast(T("toast.statusError", { message: (err as Error).message }), "error", true);
     return null;
   }
 }
@@ -930,7 +981,7 @@ async function withBusy(
 
 const guard = (): boolean => {
   if (isApp) return true;
-  toast("La app no está conectada", "error", true);
+  toast(T("toast.notConnected"), "error", true);
   return false;
 };
 
@@ -941,10 +992,10 @@ $<HTMLButtonElement>("btn-install-deps").addEventListener("click", () =>
 $<HTMLButtonElement>("btn-login").addEventListener("click", () =>
   withBusy("btn-login", async () => {
     if (!guard()) return;
-    toast("Se abrirá el navegador. Inicia sesión y, si aparece un captcha, resuélvelo.");
+    toast(T("toast.loginBrowser"));
     try {
       await api.request.login({});
-      toast("Sesión iniciada", "success");
+      toast(T("toast.sessionStarted"), "success");
       await loadStatus();
     } catch (err) {
       toast((err as Error).message, "error", true);
@@ -983,12 +1034,12 @@ $<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
     if (!guard()) return;
     const token = $<HTMLInputElement>("token-input").value.trim();
     if (!token) {
-      toast("Pega un token primero", "warn");
+      toast(T("toast.pasteTokenFirst"), "warn");
       return;
     }
     await api.request.loginWithToken({ token });
     closeTokenModal();
-    toast("Token guardado", "success");
+    toast(T("toast.tokenSaved"), "success");
     await loadStatus();
   }),
 );
@@ -997,7 +1048,7 @@ $<HTMLButtonElement>("btn-logout").addEventListener("click", () =>
   withBusy("btn-logout", async () => {
     if (!guard()) return;
     await api.request.logout({});
-    toast("Sesión cerrada", "success");
+    toast(T("toast.loggedOut"), "success");
     await loadStatus();
   }),
 );
@@ -1007,8 +1058,8 @@ $<HTMLButtonElement>("btn-refresh-likes").addEventListener("click", () =>
     if (!guard()) return;
     const res = await api.request.refreshLikes({});
     renderLikes(res.count);
-    setSidebar(true, `Listo: ${res.count} favoritos`);
-    toast(`${res.count} favoritos actualizados`, "success");
+    setSidebar(true, T("sidebar.ready", { count: res.count }));
+    toast(T("toast.likesUpdated", { count: res.count }), "success");
   }),
 );
 
@@ -1031,11 +1082,11 @@ $<HTMLButtonElement>("btn-pause").addEventListener("click", () => {
   const btn = $<HTMLButtonElement>("btn-pause");
   if (downloadPaused) {
     api.request.resumeDownload({});
-    btn.textContent = "Pausar";
+    btn.textContent = T("dl.pause");
     downloadPaused = false;
   } else {
     api.request.pauseDownload({});
-    btn.textContent = "Reanudar";
+    btn.textContent = T("dl.resume");
     downloadPaused = true;
   }
 });
@@ -1081,15 +1132,15 @@ async function doSearch(): Promise<void> {
 
   if (!query) {
     renderSearchEmpty(
-      "Escribe algo para buscar",
-      "Se buscará en todo SoundCloud.",
+      T("search.typeSomething"),
+      T("search.typeDetail"),
     );
     return;
   }
 
   results.textContent = "";
   results.appendChild(
-    loadingState(`Buscando "${query}" en SoundCloud...`),
+    loadingState(T("search.searching", { query })),
   );
 
   try {
@@ -1097,15 +1148,15 @@ async function doSearch(): Promise<void> {
     results.textContent = "";
     if (!res.tracks.length) {
       renderSearchEmpty(
-        `Sin resultados para "${query}"`,
-        "Prueba con otro término.",
+        T("search.noResults", { query }),
+        T("search.noResultsDetail"),
       );
       return;
     }
     for (const t of res.tracks) results.appendChild(trackCard(t));
   } catch (err) {
     results.textContent = "";
-    renderSearchEmpty("No se pudo buscar", (err as Error).message);
+    renderSearchEmpty(T("search.failed"), (err as Error).message);
   }
 }
 
@@ -1156,7 +1207,7 @@ $<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
     if (!guard()) return;
     const url = $<HTMLInputElement>("url-input").value.trim();
     if (!url) {
-      toast("Pega un enlace de SoundCloud primero", "warn");
+      toast(T("toast.urlEmpty"), "warn");
       return;
     }
     showView("download");
@@ -1174,14 +1225,14 @@ $<HTMLInputElement>("url-input").addEventListener("keydown", (e) => {
 });
 
 // ---- Editor de plantilla de nombre (chips) ----
-const VAR_TITLES: Record<string, string> = {
-  title: "Título",
-  uploader: "Subidor",
-  artist: "Artista",
-  album: "Álbum",
-  id: "ID",
-  playlist_index: "Nº",
-  ext: "Ext",
+const VAR_KEYS: Record<string, string> = {
+  title: "var.title",
+  uploader: "var.uploader",
+  artist: "var.artist",
+  album: "var.album",
+  id: "var.id",
+  playlist_index: "var.playlist_index",
+  ext: "var.ext",
 };
 
 const TEMPLATE_EXAMPLES: Record<string, string> = {
@@ -1199,7 +1250,7 @@ function makeChip(variable: string): HTMLSpanElement {
   chip.className = "chip";
   chip.contentEditable = "false";
   chip.setAttribute("data-var", variable);
-  chip.textContent = VAR_TITLES[variable] ?? `%(${variable})s`;
+  chip.textContent = VAR_KEYS[variable] ? T(VAR_KEYS[variable]) : `%(${variable})s`;
   chip.title = `%(${variable})s`;
   return chip;
 }
@@ -1265,7 +1316,7 @@ function updateTemplatePreview(): void {
     (_m, v: string) => TEMPLATE_EXAMPLES[v] ?? `[${v}]`,
   );
   $<HTMLElement>("template-preview").textContent =
-    preview ? `Nombre: ${preview}.mp3` : "";
+    preview ? T("settings.preview", { name: preview }) : "";
 }
 
 document
@@ -1287,12 +1338,25 @@ function seedSettings(c: ConfigPayload): void {
   $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
   $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
   $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
+  if (!langUserSet) {
+    setLang(resolveLang(c.lang));
+  }
   renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s");
   updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");
   updateBitrateState();
 }
+
+/** Mantiene el selector de idioma sincronizado con la lengua activa. */
+function renderLanguageSelect(): void {
+  $<HTMLSelectElement>("set-lang").value = currentLang;
+}
+
+$<HTMLSelectElement>("set-lang").addEventListener("change", () => {
+  langUserSet = true;
+  setLang(resolveLang($<HTMLSelectElement>("set-lang").value), true);
+});
 
 $<HTMLSelectElement>("set-theme").addEventListener("change", () => {
   applyTheme($<HTMLSelectElement>("set-theme").value);
@@ -1324,11 +1388,11 @@ $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
     if (!guard()) return;
     const template = serializeEditor().trim();
     if (!template) {
-      toast("El formato del nombre de archivo no puede estar vacío", "warn");
+      toast(T("settings.templateEmpty"), "warn");
       return;
     }
     if (!/\([^)]+\)/.test(template)) {
-      toast("El nombre debe incluir al menos una variable", "warn");
+      toast(T("settings.templateNoVar"), "warn");
       return;
     }
     await api.request.saveConfig({
@@ -1337,9 +1401,10 @@ $<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
       bitrate: $<HTMLSelectElement>("set-bitrate").value,
       filenameTemplate: template,
       theme: $<HTMLSelectElement>("set-theme").value,
+      lang: currentLang,
       skipExisting: $<HTMLInputElement>("set-skip").checked,
     });
-    toast("Ajustes guardados", "success");
+    toast(T("settings.saved"), "success");
     await loadStatus();
   }),
 );
@@ -1349,7 +1414,7 @@ function openConfigModal(mode: "export" | "import", text = ""): void {
   const modal = $<HTMLElement>("config-modal");
   modal.classList.remove("hidden");
   $<HTMLElement>("config-modal-title").textContent =
-    mode === "export" ? "Exportar configuración" : "Importar configuración";
+    mode === "export" ? T("configModal.export") : T("configModal.import");
   const ta = $<HTMLTextAreaElement>("config-text");
   ta.value = text;
   ta.readOnly = mode === "export";
@@ -1377,7 +1442,7 @@ $<HTMLButtonElement>("config-copy").addEventListener("click", async () => {
     $<HTMLTextAreaElement>("config-text").select();
     document.execCommand("copy");
   }
-  toast("Configuración copiada al portapapeles", "success");
+  toast(T("configModal.copied"), "success");
 });
 $<HTMLButtonElement>("btn-import-config").addEventListener("click", () =>
   openConfigModal("import"),
@@ -1389,7 +1454,7 @@ $<HTMLButtonElement>("config-apply").addEventListener("click", () =>
       json: $<HTMLTextAreaElement>("config-text").value,
     });
     closeConfigModal();
-    toast("Configuración importada", "success");
+    toast(T("configModal.imported"), "success");
     await loadStatus();
   }),
 );
@@ -1411,9 +1476,9 @@ async function renderStats(): Promise<void> {
     const grid = $<HTMLElement>("stats-grid");
     grid.textContent = "";
     const cells: [string, string][] = [
-      ["Total", String(items.length)],
-      ["Últimos 7 días", String(last7)],
-      ["Formatos", Object.entries(byFormat).map(([f, n]) => `${f} ×${n}`).join(" · ") || "—"],
+      [T("stats.total"), String(items.length)],
+      [T("stats.last7"), String(last7)],
+      [T("stats.formats"), Object.entries(byFormat).map(([f, n]) => `${f} ×${n}`).join(" · ") || "—"],
     ];
     for (const [label, value] of cells) {
       const cell = document.createElement("div");
@@ -1439,14 +1504,14 @@ $<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
   withBusy("btn-cleanup", async () => {
     if (!guard()) return;
     const ok = window.confirm(
-      "Se eliminarán de la carpeta las canciones descargadas que ya no estén en tus favoritos. ¿Continuar?",
+      T("toast.confirmCleanup"),
     );
     if (!ok) return;
     const res = await api.request.cleanupNonFavorites({});
     if (res.removed.length) {
-      toast(`Eliminadas ${res.removed.length} canciones`, "success");
+      toast(T("toast.cleanupRemoved", { count: res.removed.length }), "success");
     } else {
-      toast("No había canciones que limpiar", "info");
+      toast(T("toast.cleanupNone"), "info");
     }
     await refreshDownloadedIds();
     await renderSyncStats();
@@ -1565,10 +1630,10 @@ async function renderCollectionFavorites(): Promise<void> {
   if (!filtered.length) {
     content.appendChild(
       emptyState(
-        "Sin resultados",
+        T("collection.noResults"),
         collectionState.query
-          ? `No hay favoritos que coincidan con "${collectionState.query}".`
-          : "No hay favoritos todavía.",
+          ? T("collection.noFavMatch", { query: collectionState.query })
+          : T("collection.noFavs"),
       ),
     );
     return;
@@ -1579,16 +1644,16 @@ async function renderCollectionFavorites(): Promise<void> {
   const h = document.createElement("p");
   h.className = "text-sm text-ink-300";
   h.textContent = collectionState.query
-    ? `${filtered.length} de ${tracks.length} canciones`
-    : `${tracks.length} canciones`;
+    ? T("collection.countOf", { filtered: filtered.length, total: tracks.length })
+    : T("collection.count", { total: tracks.length });
   const dl = document.createElement("button");
   dl.className =
     "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
-  dl.textContent = "Descargar todo";
+  dl.textContent = T("collection.downloadAll");
   dl.addEventListener("click", () =>
     withBusy("", async () => {
       if (!guard()) return;
-      startDownloadView("Tus favoritos");
+      startDownloadView(T("collection.yourFavs"));
       await api.request.downloadAll({});
     await refreshDownloadedIds();
       await renderSyncStats();
@@ -1611,19 +1676,19 @@ async function renderCollectionPlaylists(): Promise<void> {
   if (!isApp) return;
 
   if (!collectionState.playlistsCache) {
-    content.appendChild(loadingState("Cargando tus playlists..."));
+    content.appendChild(loadingState(T("collection.loadingPlaylists")));
     try {
       const res = await api.request.getPlaylists({});
       collectionState.playlistsCache = res.playlists;
     } catch (err) {
-      content.appendChild(emptyState("No se pudieron cargar las playlists", (err as Error).message));
+      content.appendChild(emptyState(T("collection.playlistsFailed"), (err as Error).message));
       return;
     }
   }
 
   const playlists = collectionState.playlistsCache;
   if (!playlists?.length) {
-    content.appendChild(emptyState("No tienes playlists", "Las playlists (sets) de tu cuenta aparecerán aquí."));
+    content.appendChild(emptyState(T("collection.noPlaylists"), T("collection.noPlaylistsDetail")));
     return;
   }
 
@@ -1664,12 +1729,12 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
     !collectionState.playlistTracksCache ||
     collectionState.playlistTracksCache.url !== url
   ) {
-    content.appendChild(loadingState("Cargando canciones de la playlist..."));
+    content.appendChild(loadingState(T("collection.loadingTracks")));
     try {
       const res = await api.request.getPlaylistTracks({ url });
       collectionState.playlistTracksCache = { url, tracks: res.tracks };
     } catch (err) {
-      content.appendChild(emptyState("No se pudieron cargar las canciones", (err as Error).message));
+      content.appendChild(emptyState(T("collection.tracksFailed"), (err as Error).message));
       return;
     }
   }
@@ -1684,7 +1749,7 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
   const back = document.createElement("button");
   back.className =
     "px-3 py-1.5 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors";
-  back.textContent = "‹ Atrás";
+  back.textContent = T("collection.back");
   back.addEventListener("click", () => {
     collectionState.playlistUrl = null;
     collectionState.query = "";
@@ -1693,21 +1758,21 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
   const count = document.createElement("p");
   count.className = "text-sm text-ink-300";
   count.textContent = collectionState.query
-    ? `${filtered.length} de ${tracks.length} canciones`
-    : `${tracks.length} canciones`;
+    ? T("collection.countOf", { filtered: filtered.length, total: tracks.length })
+    : T("collection.count", { total: tracks.length });
   left.appendChild(back);
   left.appendChild(count);
 
   const dl = document.createElement("button");
   dl.className =
     "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
-  dl.textContent = "Descargar todo";
+  dl.textContent = T("collection.downloadAll");
   dl.disabled = tracks.length === 0;
   if (tracks.length === 0) dl.classList.add("opacity-50", "pointer-events-none");
   dl.addEventListener("click", () =>
     withBusy("", async () => {
       if (!guard()) return;
-      startDownloadView("Playlist completa");
+      startDownloadView(T("collection.fullPlaylist"));
       await api.request.downloadUrls({ urls: tracks.map((t) => t.url) });
     await refreshDownloadedIds();
       await renderSyncStats();
@@ -1722,10 +1787,10 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
   if (!filtered.length) {
     content.appendChild(
       emptyState(
-        "Sin resultados",
+        T("collection.noResults"),
         collectionState.query
-          ? `No hay canciones que coincidan con "${collectionState.query}".`
-          : "La playlist está vacía.",
+          ? T("collection.noTrackMatch", { query: collectionState.query })
+          : T("collection.playlistEmpty"),
       ),
     );
     return;
@@ -1799,6 +1864,7 @@ async function initAbout(): Promise<void> {
 }
 
 // ---- Arranque ----
+applyStaticTranslations();
 resetDownloadUI();
 showView("status");
 refreshDownloadedIds();
@@ -1836,7 +1902,7 @@ async function checkForUpdatesBackground(): Promise<void> {
     await loadStatus();
     if (r.updated.length) {
       toast(
-        `Dependencias actualizadas: ${r.updated.join(", ")}`,
+        T("toast.depsUpdated", { list: r.updated.join(", ") }),
         "success",
         false,
         6000,

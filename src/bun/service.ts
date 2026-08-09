@@ -50,6 +50,7 @@ import type {
   HistoryItemPayload,
   UpdateResultPayload,
 } from "../shared/types";
+import { resolveLang, t, type Lang, type Vars } from "../shared/i18n";
 
 export interface Emitter {
   log(level: LogLevel, text: string): void;
@@ -59,6 +60,7 @@ export interface Emitter {
 
 export type LoginBrowserFn = (
   onStatus: (msg: string) => void,
+  lang: Lang,
 ) => Promise<LoginResultPayload>;
 
 const DEFAULT_OUTDIR = path.join(os.homedir(), "Music", "SoundCloud");
@@ -126,6 +128,16 @@ export class Service {
     if (initialDeps) this.deps = initialDeps;
   }
 
+  /** Lengua efectiva según la config guardada (o la del sistema). */
+  private get lang(): Lang {
+    return resolveLang(this.config.lang);
+  }
+
+  /** Traduce un mensaje con la lengua activa. */
+  private msg(key: string, vars?: Vars): string {
+    return t(this.lang, key, vars);
+  }
+
   // ---- Estado ----
 
   async getStatus(): Promise<StatusSnapshot> {
@@ -178,20 +190,21 @@ export class Service {
   }
 
   async installDeps(): Promise<DepsStatus> {
-    this.emitter.status("deps", "Comprobando dependencias...");
+    this.emitter.status("deps", this.msg("deps.checking"));
     const deps = await ensureDeps({
       onStatus: (m) => this.emitter.status("deps", m),
       askInstall: async () => true,
+      lang: this.lang,
     });
     this.deps = deps;
     const hasFfmpeg =
       deps.ffmpegDir !== null ||
       !!(Bun.which("ffmpeg") && Bun.which("ffprobe"));
     if (!hasFfmpeg) {
-      throw new Error("No se pudo instalar ffmpeg. Instálalo manualmente con: brew install ffmpeg");
+      throw new Error(this.msg("deps.installFfmpegError"));
     }
-    this.emitter.log("success", `yt-dlp: ${deps.ytdlp}`);
-    this.emitter.log("success", `ffmpeg: ${deps.ffmpegDir ?? "del sistema (PATH)"}`);
+    this.emitter.log("success", this.msg("deps.ytdlpLog", { path: deps.ytdlp }));
+    this.emitter.log("success", this.msg("deps.ffmpegLog", { path: deps.ffmpegDir ?? this.msg("tools.systemBinary") }));
     return this.getDepsStatus();
   }
 
@@ -199,11 +212,11 @@ export class Service {
     if (this.deps) return this.deps;
     const ytdlp = Bun.which("yt-dlp") ?? path.join(BIN_DIR, "yt-dlp");
     if (!fs.existsSync(ytdlp)) {
-      throw new Error("yt-dlp no está disponible. Instala las dependencias.");
+      throw new Error(this.msg("deps.ytdlpUnavailable"));
     }
     const hasFfmpeg = !!(Bun.which("ffmpeg") && Bun.which("ffprobe"));
     if (!hasFfmpeg) {
-      throw new Error("ffmpeg no está disponible. Instala las dependencias.");
+      throw new Error(this.msg("deps.ffmpegUnavailable"));
     }
     this.deps = { ytdlp, ffmpegDir: null };
     return this.deps;
@@ -224,10 +237,10 @@ export class Service {
     const updated: string[] = [];
 
     if (versions.ytdlp.hasUpdate) {
-      if (await checkYtDlpUpdate(deps.ytdlp, cb, latest.ytdlp)) updated.push("yt-dlp");
+      if (await checkYtDlpUpdate(deps.ytdlp, cb, latest.ytdlp, this.lang)) updated.push("yt-dlp");
     }
     if (versions.ffmpeg.hasUpdate) {
-      if (await checkFfmpegUpdate(deps.ffmpegDir, cb, latest.ffmpeg)) {
+      if (await checkFfmpegUpdate(deps.ffmpegDir, cb, latest.ffmpeg, this.lang)) {
         updated.push("ffmpeg");
       }
     }
@@ -235,7 +248,7 @@ export class Service {
     const after = await computeVersions(deps, latest);
     this.versionsCache = after;
     for (const name of updated) {
-      this.emitter.log("success", `${name} actualizado.`);
+      this.emitter.log("success", this.msg("deps.updated", { name }));
     }
     return { updated, versions: after };
   }
@@ -256,10 +269,11 @@ export class Service {
       next.filenameTemplate = patch.filenameTemplate;
     }
     if (patch.theme !== undefined) next.theme = patch.theme as 'dark' | 'light';
+    if (patch.lang !== undefined) next.lang = patch.lang as 'es' | 'en';
     if (patch.skipExisting !== undefined) next.skipExisting = patch.skipExisting;
     if (patch.oauthToken === "") {
       delete next.oauthToken;
-      this.emitter.log("info", "Sesión cerrada.");
+      this.emitter.log("info", this.msg("login.sessionClosed"));
     } else if (patch.oauthToken) {
       next.oauthToken = patch.oauthToken;
     }
@@ -284,6 +298,7 @@ export class Service {
       bitrate: c.bitrate ?? c.quality ?? '320K',
       filenameTemplate: this.getFilenameTemplate(c),
       theme: c.theme ?? 'dark',
+      lang: this.lang,
       skipExisting: c.skipExisting ?? true,
       hasToken: !!c.oauthToken,
     };
@@ -302,24 +317,27 @@ export class Service {
   // ---- Autenticación ----
 
   async login(): Promise<LoginResultPayload> {
-    this.emitter.status("login", "Abriendo la ventana de SoundCloud...");
-    const res = await this.loginBrowser((m) => this.emitter.status("login", m));
+    this.emitter.status("login", this.msg("login.openingWindow"));
+    const res = await this.loginBrowser(
+      (m) => this.emitter.status("login", m),
+      this.lang,
+    );
     this.config.oauthToken = res.oauthToken;
     if (res.username) this.config.username = res.username;
     this.config.setupDone = true;
     saveConfig(this.config);
-    this.emitter.log("success", "Sesión iniciada y guardada.");
+    this.emitter.log("success", this.msg("login.sessionSaved"));
     return res;
   }
 
   async loginWithToken(token: string): Promise<{ ok: boolean }> {
     if (!token || token.trim().length < 10) {
-      throw new Error("El token no parece válido.");
+      throw new Error(this.msg("login.tokenInvalid"));
     }
     this.config.oauthToken = token.trim();
     this.config.setupDone = true;
     saveConfig(this.config);
-    this.emitter.log("success", "Token guardado.");
+    this.emitter.log("success", this.msg("login.tokenSaved"));
     return { ok: true };
   }
 
@@ -329,7 +347,7 @@ export class Service {
     this.config.setupDone = true;
     saveConfig(this.config);
     clearSoundCloudSession();
-    this.emitter.log("info", "Sesión cerrada.");
+    this.emitter.log("info", this.msg("login.sessionClosed"));
     return { ok: true };
   }
 
@@ -340,9 +358,9 @@ export class Service {
     const username = this.config.username;
     const token = this.config.oauthToken;
     if (!username || !token) {
-      throw new Error("Inicia sesión y configura tu usuario primero.");
+      throw new Error(this.msg("likes.loginFirst"));
     }
-    this.emitter.status("likes", "Obteniendo tus favoritos...");
+    this.emitter.status("likes", this.msg("likes.fetching"));
     const result = await fetchLikes({
       ytdlp: deps.ytdlp,
       ffmpegDir: deps.ffmpegDir,
@@ -351,9 +369,9 @@ export class Service {
     });
     saveLikesCache(username, result.tracks);
     if (result.tokenInvalid) {
-      this.emitter.log("warn", "El token parece no ser válido; solo se verán los likes públicos.");
+      this.emitter.log("warn", this.msg("likes.tokenWarn"));
     }
-    this.emitter.log("success", `Favoritos: ${result.tracks.length}`);
+    this.emitter.log("success", this.msg("likes.count", { count: result.tracks.length }));
     return { tracks: result.tracks, tokenInvalid: result.tokenInvalid, count: result.tracks.length };
   }
 
@@ -405,7 +423,7 @@ export class Service {
     fs.mkdirSync(outDir, { recursive: true });
     return this.runDownload(
       buildDownloadArgs(this.downloadOpts(config, outDir)),
-      "Descargando todos tus favoritos...",
+      this.msg("dl.allFavorites"),
     );
   }
 
@@ -413,10 +431,10 @@ export class Service {
     const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     fs.mkdirSync(outDir, { recursive: true });
-    this.emitter.log("info", `Descargando canción individual: ${url}`);
+    this.emitter.log("info", this.msg("dl.singleTrack", { url }));
     return this.runDownload(
       buildDownloadArgs({ ...this.downloadOpts(config, outDir), url }),
-      "Descargando canción...",
+      this.msg("dl.downloadingTrack"),
     );
   }
 
@@ -424,7 +442,7 @@ export class Service {
   async downloadUrl(url: string): Promise<{ ok: boolean; code: number }> {
     const trimmed = url.trim();
     if (!/^https?:\/\/(www\.|m\.|on\.)?soundcloud\.com\//i.test(trimmed)) {
-      throw new Error("Ese enlace no parece ser de SoundCloud.");
+      throw new Error(this.msg("dl.badUrl"));
     }
     return this.downloadTrack(trimmed);
   }
@@ -439,7 +457,7 @@ export class Service {
   importConfig(json: string): { ok: boolean } {
     const parsed = JSON.parse(json) as Partial<Config>;
     if (!parsed || typeof parsed !== "object") {
-      throw new Error("El JSON de configuración no es válido.");
+      throw new Error(this.msg("config.badJson"));
     }
     const next: Config = { ...this.config };
     if (parsed.outdir) next.outdir = parsed.outdir;
@@ -447,10 +465,11 @@ export class Service {
     if (parsed.bitrate) next.bitrate = parsed.bitrate;
     if (parsed.filenameTemplate) next.filenameTemplate = parsed.filenameTemplate;
     if (parsed.skipExisting !== undefined) next.skipExisting = parsed.skipExisting;
+    if (parsed.lang !== undefined) next.lang = parsed.lang;
     next.setupDone = true;
     this.config = next;
     saveConfig(next);
-    this.emitter.log("success", "Configuración importada.");
+    this.emitter.log("success", this.msg("config.imported"));
     return { ok: true };
   }
 
@@ -534,10 +553,10 @@ export class Service {
   /** Busca canciones en todo SoundCloud. */
   async searchSoundcloud(query: string): Promise<{ tracks: LikedTrack[] }> {
     const q = query.trim();
-    if (!q) throw new Error("Escribe un término de búsqueda.");
+    if (!q) throw new Error(this.msg("search.emptyQuery"));
     const config = this.requireDownloadConfig();
     const deps = await this.ensureDepsReady();
-    this.emitter.status("likes", `Buscando "${q}" en SoundCloud...`);
+    this.emitter.status("likes", this.msg("search.searching", { query: q }));
     const { entries } = await fetchFlatEntries(`scsearch20:${q}`, {
       ytdlp: deps.ytdlp,
       ffmpegDir: deps.ffmpegDir,
@@ -550,40 +569,40 @@ export class Service {
   /** Descarga una lista de URLs (p.ej. una playlist entera). */
   async downloadUrls(urls: string[]): Promise<{ ok: boolean; code: number }> {
     const clean = urls.filter(Boolean);
-    if (clean.length === 0) throw new Error("No hay canciones para descargar.");
+    if (clean.length === 0) throw new Error(this.msg("dl.noTracks"));
     const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     fs.mkdirSync(outDir, { recursive: true });
     return this.runDownload(
       buildDownloadArgs({ ...this.downloadOpts(config, outDir), urls: clean }),
-      `Descargando ${clean.length} canciones...`,
+      this.msg("dl.downloadingUrls", { count: clean.length }),
     );
   }
 
   cancelDownload(): { ok: boolean } {
     if (this.abort) {
       this.abort.abort();
-      this.emitter.log("warn", "Descarga cancelada por el usuario.");
+      this.emitter.log("warn", this.msg("dl.cancelled"));
     }
     return { ok: true };
   }
 
   pauseDownload(): { ok: boolean } {
     this.controller?.pause();
-    this.emitter.log("info", "Descarga pausada.");
+    this.emitter.log("info", this.msg("dl.paused"));
     return { ok: true };
   }
 
   resumeDownload(): { ok: boolean } {
     this.controller?.resume();
-    this.emitter.log("info", "Descarga reanudada.");
+    this.emitter.log("info", this.msg("dl.resumed"));
     return { ok: true };
   }
 
   private requireDownloadConfig(): Config {
     const { username, oauthToken, outdir } = this.config;
     if (!username || !oauthToken) {
-      throw new Error("Inicia sesión y configura tu usuario para descargar.");
+      throw new Error(this.msg("dl.requireLogin"));
     }
     return { ...this.config, outdir: outdir || DEFAULT_OUTDIR };
   }
@@ -645,7 +664,9 @@ export class Service {
       tracker.handle("");
       this.emitter.status(
         "download",
-        code === 0 ? "Descarga completada" : `Descarga terminó con código ${code}`,
+        code === 0
+          ? this.msg("dl.completed")
+          : this.msg("dl.finishedCode", { code }),
       );
 
       // Historial + notificación del sistema al terminar.
@@ -659,11 +680,11 @@ export class Service {
       if (code === 0) {
         try {
           Utils.showNotification({
-            title: "Descarga completada",
+            title: this.msg("dl.notificationTitle"),
             body:
               target === "favoritos"
-                ? "Se ha sincronizado tu lista de favoritos."
-                : `Se ha descargado: ${target}`,
+                ? this.msg("dl.notificationFavs")
+                : this.msg("dl.notificationTrack", { target }),
           });
         } catch {
           // las notificaciones no son críticas

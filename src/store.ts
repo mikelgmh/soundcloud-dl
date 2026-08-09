@@ -50,6 +50,8 @@ export interface Config {
   bitrate?: string;
   filenameTemplate?: string;
   theme?: 'dark' | 'light';
+  /** Idioma de la interfaz: 'es' | 'en' (por defecto se detecta del sistema). */
+  lang?: 'es' | 'en';
   skipExisting?: boolean;
 }
 

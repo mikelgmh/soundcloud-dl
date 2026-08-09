@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { BIN_DIR, SND_DIR } from './store';
 import { run } from './util';
+import { resolveLang, t, type Lang } from './shared/i18n';
 
 export interface Deps {
   ytdlp: string;
@@ -15,6 +16,8 @@ export interface EnsureDepsOpts {
   onStatus: (msg: string) => void;
   /** Devuelve true si el usuario autoriza instalar la herramienta faltante. */
   askInstall: (tool: 'yt-dlp' | 'ffmpeg', suggestion: string) => Promise<boolean>;
+  /** Lengua de los mensajes de estado. */
+  lang?: Lang;
 }
 
 /** Versión actual y última disponible de una herramienta. */
@@ -228,13 +231,14 @@ export async function checkYtDlpUpdate(
   ytdlpPath: string,
   onStatus?: (m: string) => void,
   latest?: { tag: string; url: string } | null,
+  lang: Lang = resolveLang(),
 ): Promise<boolean> {
   if (!path.dirname(ytdlpPath).startsWith(BIN_DIR)) return false;
   const l = latest ?? (await fetchYtDlpLatest());
   if (!l) return false;
   const current = getStoredYtDlpVersion(ytdlpPath) ?? (await readYtDlpVersion(ytdlpPath));
   if (!current || compareVersions(l.tag, current) <= 0) return false;
-  onStatus?.(`Actualizando yt-dlp a ${l.tag}...`);
+  onStatus?.(t(lang, "deps.updatingYtdlp", { version: l.tag }));
   try {
     const version = await downloadYtDlp(l.url, ytdlpPath);
     if (!version) return false;
@@ -250,14 +254,15 @@ export async function checkFfmpegUpdate(
   ffmpegDir: string | null,
   onStatus?: (m: string) => void,
   latestVersion?: string | null,
+  lang: Lang = resolveLang(),
 ): Promise<boolean> {
   if (ffmpegDir) {
     const latest = latestVersion ?? (await fetchEvermeetLatest());
     if (!latest) return false;
     const current = await getFfmpegVersion(ffmpegDir);
     if (!current || compareVersions(latest, current) <= 0) return false;
-    onStatus?.(`Actualizando ffmpeg a ${latest}...`);
-    const dir = await downloadFfmpegStatic(onStatus ?? (() => {}), true);
+    onStatus?.(t(lang, "deps.updatingFfmpeg", { version: latest }));
+    const dir = await downloadFfmpegStatic(onStatus ?? (() => {}), true, lang);
     return dir !== null;
   }
 
@@ -265,7 +270,7 @@ export async function checkFfmpegUpdate(
   if (latestVersion == null) return false;
   const current = await getFfmpegVersion(null);
   if (!current || compareVersions(latestVersion, current) <= 0) return false;
-  onStatus?.('Actualizando ffmpeg con Homebrew...');
+  onStatus?.(t(lang, "deps.updatingFfmpegBrew"));
   const upgrade = await run(['brew', 'upgrade', 'ffmpeg'], { capture: true });
   return upgrade.code === 0;
 }
@@ -275,6 +280,7 @@ export async function checkFfmpegUpdate(
 export async function ensureYtDlp(
   onStatus: (msg: string) => void,
   ask: () => Promise<boolean>,
+  lang: Lang = resolveLang(),
 ): Promise<string> {
   const binPath = path.join(BIN_DIR, 'yt-dlp');
   const candidates = [Bun.which('yt-dlp'), fs.existsSync(binPath) ? binPath : null];
@@ -286,14 +292,13 @@ export async function ensureYtDlp(
 
   const ok = await ask();
   if (!ok) {
-    throw new Error(
-      'yt-dlp no está instalado. Instálalo manualmente con: brew install yt-dlp',
-    );
+    throw new Error(t(lang, 'deps.installYtdlpManual'));
   }
 
   fs.mkdirSync(BIN_DIR, { recursive: true });
   for (const url of YTDLP_SOURCES) {
-    onStatus(`Descargando yt-dlp (${url.includes('nightly') ? 'nightly' : 'stable'})...`);
+    const channel = url.includes('nightly') ? 'nightly' : 'stable';
+    onStatus(t(lang, 'deps.downloadingYtdlp', { channel }));
     try {
       const version = await downloadYtDlp(url, binPath);
       if (version) {
@@ -304,13 +309,14 @@ export async function ensureYtDlp(
       // intentar la siguiente fuente
     }
   }
-  throw new Error(
-    'No se pudo instalar yt-dlp automáticamente. Instálalo con: brew install yt-dlp',
-  );
+  throw new Error(t(lang, 'deps.installYtdlpFailed'));
 }
 
-function installFfmpegViaBrew(onStatus: (msg: string) => void): Promise<boolean> {
-  onStatus('Instalando ffmpeg con Homebrew (puede tardar varios minutos)...');
+function installFfmpegViaBrew(
+  onStatus: (msg: string) => void,
+  lang: Lang = resolveLang(),
+): Promise<boolean> {
+  onStatus(t(lang, 'deps.installingFfmpegBrew'));
   return run(['brew', 'install', 'ffmpeg']).then(
     (r) => r.code === 0 && !!(Bun.which('ffmpeg') && Bun.which('ffprobe')),
   );
@@ -319,6 +325,7 @@ function installFfmpegViaBrew(onStatus: (msg: string) => void): Promise<boolean>
 async function downloadFfmpegStatic(
   onStatus: (m: string) => void,
   force = false,
+  lang: Lang = resolveLang(),
 ): Promise<string | null> {
   const dir = path.join(BIN_DIR, 'ffmpeg');
   fs.mkdirSync(dir, { recursive: true });
@@ -326,7 +333,7 @@ async function downloadFfmpegStatic(
     for (const [name, url] of Object.entries(FFMPEG_MACOS)) {
       const dest = path.join(dir, name);
       if (fs.existsSync(dest) && !force) continue;
-      onStatus(`Descargando ${name}...`);
+      onStatus(t(lang, 'deps.downloadingTool', { name }));
       const res = await fetch(url, { redirect: 'follow' });
       if (!res.ok) throw new Error(`HTTP ${res.status} (${name})`);
       const zipPath = path.join(dir, `${name}.zip`);
@@ -346,36 +353,40 @@ async function downloadFfmpegStatic(
 export async function ensureFfmpeg(
   onStatus: (msg: string) => void,
   ask: (suggestion: string) => Promise<boolean>,
+  lang: Lang = resolveLang(),
 ): Promise<string | null> {
-  onStatus('Comprobando ffmpeg...');
+  onStatus(t(lang, 'deps.checkingFfmpeg'));
   const system = Bun.which('ffmpeg') && Bun.which('ffprobe');
   if (system) return null;
 
-  onStatus('ffmpeg no detectado en el sistema');
+  onStatus(t(lang, 'deps.ffmpegNotFound'));
   const hasBrew = !!Bun.which('brew');
   const suggestion = hasBrew
-    ? 'Homebrew (brew install ffmpeg)'
-    : 'descargando el binario estático para macOS';
+    ? t(lang, 'deps.suggestionOfficial')
+    : t(lang, 'deps.suggestionStatic');
   const ok = await ask(suggestion);
   if (!ok) return null;
 
   if (hasBrew) {
-    return (await installFfmpegViaBrew(onStatus)) ? null : null;
+    return (await installFfmpegViaBrew(onStatus, lang)) ? null : null;
   }
 
   if (os.platform() !== 'darwin') {
-    onStatus('En esta plataforma instala ffmpeg manualmente.');
+    onStatus(t(lang, 'deps.ffmpegManual'));
     return null;
   }
-  return downloadFfmpegStatic(onStatus);
+  return downloadFfmpegStatic(onStatus, false, lang);
 }
 
 export async function ensureDeps(opts: EnsureDepsOpts): Promise<Deps> {
+  const lang = opts.lang ?? resolveLang();
   const ytdlp = await ensureYtDlp(opts.onStatus, () =>
-    opts.askInstall('yt-dlp', 'descargar el binario oficial'),
+    opts.askInstall('yt-dlp', t(lang, 'deps.suggestionOfficial')),
+    lang,
   );
   const ffmpegDir = await ensureFfmpeg(opts.onStatus, (suggestion) =>
     opts.askInstall('ffmpeg', suggestion),
+    lang,
   );
   return { ytdlp, ffmpegDir };
 }

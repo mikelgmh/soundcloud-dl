@@ -1,6 +1,7 @@
 import { BrowserWindow, Session } from "electrobun/bun";
 import { sleep } from "../util";
 import type { LoginResultPayload } from "../shared/types";
+import { resolveLang, t, type Lang } from "../shared/i18n";
 
 // Login con la webview nativa del sistema (WKWebView): sin Playwright, sin
 // señales de automatización. Se abre una ventana con SoundCloud, el usuario
@@ -51,12 +52,13 @@ export function clearSoundCloudSession(): void {
 
 export async function loginWithElectrobunWindow(
   onStatus: (msg: string) => void,
+  lang: Lang = resolveLang(),
 ): Promise<LoginResultPayload> {
   let closed = false;
   let currentUrl = LOGIN_URL;
 
   const win = new BrowserWindow({
-    title: "Inicia sesión en SoundCloud",
+    title: t(lang, "login.windowTitle"),
     url: LOGIN_URL,
     frame: { width: 980, height: 780, x: 150, y: 100 },
   });
@@ -70,9 +72,7 @@ export async function loginWithElectrobunWindow(
     closed = true;
   });
 
-  onStatus(
-    "Inicia sesión en la ventana de SoundCloud. Si aparece un captcha, resuélvelo.",
-  );
+  onStatus(t(lang, "login.prompt"));
 
   // Comprueba si la sesión actual es real navegando a /you (que redirige a tu
   // perfil si estás logueado, o a /signin si no). Usa la webview real.
@@ -104,7 +104,7 @@ export async function loginWithElectrobunWindow(
   while (Date.now() < deadline) {
     if (closed) {
       win.close();
-      throw new Error("Ventana de inicio de sesión cerrada.");
+      throw new Error(t(lang, "login.windowClosed"));
     }
 
     const token = readOAuthToken();
@@ -114,7 +114,7 @@ export async function loginWithElectrobunWindow(
       const v = await checkLoggedIn();
       checkedInitial = true;
       if (v.loggedIn) {
-        onStatus("Sesión verificada. Conectando con la app...");
+        onStatus(t(lang, "login.verified"));
         win.webview.loadURL(CONNECTING_URL);
         await sleep(1200);
         win.close();
@@ -126,7 +126,5 @@ export async function loginWithElectrobunWindow(
   }
 
   win.close();
-  throw new Error(
-    "Tiempo de espera agotado (5 min) esperando el inicio de sesión.",
-  );
+  throw new Error(t(lang, "login.timeout"));
 }

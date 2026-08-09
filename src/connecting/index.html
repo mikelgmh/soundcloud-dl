@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Conectando</title>
+    <title data-i18n="connecting.title">Conectando</title>
     <style>
       * {
         margin: 0;
@@ -55,8 +55,25 @@
   <body>
     <div class="box">
       <div class="spinner"></div>
-      <h1>Conectando con la app...</h1>
-      <p>Verificando tu sesión de SoundCloud</p>
+      <h1 id="connect-title" data-i18n="connecting.title">Conectando con la app...</h1>
+      <p id="connect-subtitle" data-i18n="connecting.subtitle">Verificando tu sesión de SoundCloud</p>
     </div>
+    <script>
+      const DICTS = {
+        es: {
+          "connecting.title": "Conectando con la app...",
+          "connecting.subtitle": "Verificando tu sesión de SoundCloud",
+        },
+        en: {
+          "connecting.title": "Connecting to the app...",
+          "connecting.subtitle": "Verifying your SoundCloud session",
+        },
+      };
+      const sysLang = (navigator.language || "en").split("-")[0].toLowerCase();
+      const lang = DICTS[sysLang] ? sysLang : "en";
+      for (const el of document.querySelectorAll("[data-i18n]")) {
+        el.textContent = DICTS[lang][el.dataset.i18n] || el.textContent;
+      }
+    </script>
   </body>
 </html>

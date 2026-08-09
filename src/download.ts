@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { run, runStream } from './util';
 import type { LikedTrack } from './store';
+import { resolveLang, t, type Lang } from './shared/i18n';
 
 export interface Session {
   cookiesFile: string;
@@ -96,7 +97,7 @@ export async function fetchFlatEntries(
   const { code, stdout, stderr } = await run(args, { capture: true });
   if (code !== 0) {
     const tail = stderr.split('\n').slice(-6).join('\n');
-    throw new Error(`yt-dlp no pudo obtener la lista:\n${tail}`);
+    throw new Error(t(resolveLang(), 'dl.listFailed', { tail }));
   }
 
   const { entries, tokenInvalid } = parseEntriesOutput(stdout, stderr);

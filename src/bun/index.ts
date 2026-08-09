@@ -8,8 +8,12 @@ import {
 import type { AppRPCSchema } from "../shared/types";
 import { Service, type Emitter } from "./service";
 import { loginWithElectrobunWindow } from "./login";
+import { detectSystemLang, t } from "../shared/i18n";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Lengua efectiva para los mensajes de actualización emitidos desde el main.
+const lang = detectSystemLang();
 
 let service!: Service;
 
@@ -116,20 +120,20 @@ async function applyAppUpdate(): Promise<{ ok: boolean }> {
   try {
     rpc.send.status({
       stage: "update",
-      message: `Descargando la nueva versión...`,
+      message: t(lang, "update.downloading"),
     });
     await Updater.downloadUpdate();
     const ready = Updater.updateInfo?.()?.updateReady ?? false;
     if (!ready) {
       rpc.send.status({
         stage: "update",
-        message: "No se pudo descargar la actualización. Inténtalo de nuevo.",
+        message: t(lang, "update.downloadFailed"),
       });
       return { ok: false };
     }
     rpc.send.status({
       stage: "update",
-      message: "Actualización lista. La app se reiniciará automáticamente.",
+      message: t(lang, "update.ready"),
     });
     // Da tiempo a que la UI muestre el aviso antes de reiniciar.
     await sleep(1500);
@@ -138,7 +142,7 @@ async function applyAppUpdate(): Promise<{ ok: boolean }> {
   } catch (err) {
     rpc.send.status({
       stage: "update",
-      message: "No se pudo aplicar la actualización.",
+      message: t(lang, "update.applyFailed"),
     });
     return { ok: false };
   }
