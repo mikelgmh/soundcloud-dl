@@ -11,10 +11,6 @@ Desktop app (ElectroBun) to download music from SoundCloud in high quality using
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-4a90d9)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
 [![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun)](https://bun.sh)
 
-> Coverage is measured in GitHub Actions (`bun test --coverage`) and uploaded to
-> [Codecov](https://codecov.io/gh/mikelgmh/soundcloud-dl). If the badge does not
-> show, check that the Codecov integration is enabled for the repository.
-
 ## Download
 
 Download the installer for your operating system (latest release):
