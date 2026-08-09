@@ -747,10 +747,20 @@ $<HTMLButtonElement>("btn-search-refresh").addEventListener("click", () =>
 );
 
 // ---- Editor de plantilla de nombre (chips) ----
-const TEMPLATE_EXAMPLES: Record<string, string> = {
+const VAR_TITLES: Record<string, string> = {
   title: "Título",
-  uploader: "Artista",
-  artist: "Artista invitado",
+  uploader: "Subidor",
+  artist: "Artista",
+  album: "Álbum",
+  id: "ID",
+  playlist_index: "Nº",
+  ext: "Ext",
+};
+
+const TEMPLATE_EXAMPLES: Record<string, string> = {
+  title: "Mi canción",
+  uploader: "MiArtista",
+  artist: "Artista",
   album: "Álbum",
   id: "123456",
   playlist_index: "3",
@@ -762,7 +772,8 @@ function makeChip(variable: string): HTMLSpanElement {
   chip.className = "chip";
   chip.contentEditable = "false";
   chip.setAttribute("data-var", variable);
-  chip.textContent = `%(${variable})s`;
+  chip.textContent = VAR_TITLES[variable] ?? `%(${variable})s`;
+  chip.title = `%(${variable})s`;
   return chip;
 }
 
