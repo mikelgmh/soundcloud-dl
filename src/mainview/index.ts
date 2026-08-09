@@ -307,7 +307,7 @@ let depsModalOpen = false;
 function showDepsModal(): void {
   depsModalOpen = true;
   $<HTMLElement>("deps-modal").classList.remove("hidden");
-  $<HTMLElement>("deps-spinner").classList.remove("hidden");
+  $<HTMLElement>("deps-spinner").hidden = false;
   $<HTMLElement>("deps-modal-error").classList.add("hidden");
   $<HTMLElement>("deps-modal-actions").classList.add("hidden");
   setDepsModalStatus(T("depsModal.checking"));
@@ -324,7 +324,7 @@ function setDepsModalStatus(msg: string): void {
 
 function showDepsModalError(msg: string): void {
   depsModalOpen = true;
-  $<HTMLElement>("deps-spinner").classList.add("hidden");
+  $<HTMLElement>("deps-spinner").hidden = true;
   const err = $<HTMLElement>("deps-modal-error");
   err.textContent = msg;
   err.classList.remove("hidden");
@@ -358,8 +358,8 @@ function showUpdateModal(version?: string): void {
   $<HTMLElement>("update-modal").classList.remove("hidden");
   $<HTMLElement>("update-version").textContent = version ? `v${version}` : "";
   $<HTMLElement>("update-status").textContent = "";
-  $<HTMLElement>("update-spinner").classList.add("hidden");
-  $<HTMLElement>("update-icon").classList.remove("hidden");
+  $<HTMLElement>("update-spinner").hidden = true;
+  $<HTMLElement>("update-icon").hidden = false;
   const btn = $<HTMLButtonElement>("btn-apply-update");
   btn.disabled = false;
   btn.textContent = T("update.apply");
@@ -367,8 +367,8 @@ function showUpdateModal(version?: string): void {
 
 function setUpdateModalStatus(msg: string): void {
   $<HTMLElement>("update-status").textContent = msg;
-  $<HTMLElement>("update-spinner").classList.remove("hidden");
-  $<HTMLElement>("update-icon").classList.add("hidden");
+  $<HTMLElement>("update-spinner").hidden = false;
+  $<HTMLElement>("update-icon").hidden = true;
   $<HTMLButtonElement>("btn-apply-update").disabled = true;
 }
 
@@ -377,8 +377,8 @@ $<HTMLButtonElement>("btn-apply-update").addEventListener("click", async () => {
   setUpdateModalStatus(T("update.downloadingShort"));
   const r = await api.request.applyAppUpdate({});
   if (!r.ok) {
-    $<HTMLElement>("update-spinner").classList.add("hidden");
-    $<HTMLElement>("update-icon").classList.remove("hidden");
+    $<HTMLElement>("update-spinner").hidden = true;
+    $<HTMLElement>("update-icon").hidden = false;
     const btn = $<HTMLButtonElement>("btn-apply-update");
     btn.disabled = false;
     btn.textContent = T("update.retry");
