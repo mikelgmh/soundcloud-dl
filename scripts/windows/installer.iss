@@ -51,7 +51,6 @@ Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=force
-CloseApplicationFilter=launcher.exe,bun.exe,bun Helper.exe,process_helper.exe
 RestartApplications=no
 SetupLogging=yes
 UninstallDisplayName={#MyAppName}
