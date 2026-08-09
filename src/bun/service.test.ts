@@ -5,21 +5,9 @@ import { mkdtempSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// Entorno aislado: directorio temporal para datos + binarios fake para que
-// ensureDepsReady pase sin dependencias reales.
+// Entorno aislado: directorio temporal para los datos (config, cookies, etc.).
 const tmp = mkdtempSync(path.join(os.tmpdir(), "snd-svc-test-"));
 process.env.SOUNDCLOUD_DOWNLOADER_DIR = tmp;
-
-const binDir = path.join(tmp, ".bin");
-fs.mkdirSync(binDir, { recursive: true });
-fs.writeFileSync(path.join(binDir, "yt-dlp"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-
-const fakeBin = path.join(tmp, "fakebin");
-fs.mkdirSync(fakeBin, { recursive: true });
-for (const n of ["ffmpeg", "ffprobe"]) {
-  fs.writeFileSync(path.join(fakeBin, n), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-}
-process.env.PATH = `${fakeBin}:${process.env.PATH}`;
 
 // --- Mocks ---
 // login.ts importa electrobun/bun a nivel de módulo; lo sustituimos para que
@@ -107,6 +95,7 @@ const makeService = (
     loginBrowser,
     async () => "/carpeta",
     runner,
+    { ytdlp: "/fake/yt-dlp", ffmpegDir: null },
   );
 
 const waitForStream = async (n = 1) => {

@@ -115,7 +115,11 @@ export class Service {
     private folderPicker: () => Promise<string | null>,
     /** Inyectable para tests; por defecto usa runStream real. */
     private runStreamFn: (cmd: string[], opts?: RunStreamOpts) => Promise<number> = runStream,
-  ) {}
+    /** Dependencias ya resueltas (inyectables para tests). */
+    initialDeps: Deps | null = null,
+  ) {
+    if (initialDeps) this.deps = initialDeps;
+  }
 
   // ---- Estado ----
 
