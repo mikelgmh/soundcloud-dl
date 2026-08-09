@@ -23,10 +23,20 @@ export default {
         entrypoint: "src/mainview/index.ts",
       },
     },
+    mac: {
+      icons: "assets/logo.iconset",
+    },
+    win: {
+      icon: "assets/logo.ico",
+    },
+    linux: {
+      icon: "assets/logo.png",
+    },
     copy: {
       "src/mainview/index.html": "views/mainview/index.html",
       "src/mainview/index.css": "views/mainview/index.css",
       "src/connecting/index.html": "views/connecting/index.html",
+      "assets/logo.png": "views/mainview/logo.png",
     },
     watch: ["src/mainview/input.css"],
   },
