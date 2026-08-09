@@ -36,70 +36,83 @@ try {
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
-// ---- Texto animado (efecto odómetro) ----
-const odometerAnimating = new WeakSet<HTMLElement>();
+// ---- Texto animado (efecto odómetro por dígito) ----
 const ODOMETER_ANIM = 300;
 
+/** Lee el texto lógico actual (textos + celdas de dígito). */
+function getOdometerText(el: HTMLElement): string {
+  let out = "";
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? "";
+    } else if (node instanceof HTMLElement) {
+      out += node.dataset.ch ?? node.textContent ?? "";
+    }
+  }
+  return out;
+}
+
+/** Celda de un carácter: solo anima si cambia el carácter. */
+function makeOdigitCell(oldChar: string, newChar: string): HTMLElement {
+  const cell = document.createElement("span");
+  cell.className = "odigit";
+  cell.dataset.ch = newChar;
+
+  if (!oldChar) {
+    // Solo entra el carácter nuevo (desde abajo).
+    const inner = document.createElement("span");
+    inner.className = "slide-in-up";
+    inner.textContent = newChar;
+    cell.appendChild(inner);
+    setTimeout(() => {
+      inner.classList.remove("slide-in-up");
+      inner.style.position = "relative";
+    }, ODOMETER_ANIM);
+    return cell;
+  }
+
+  // El anterior sale hacia arriba.
+  const oldS = document.createElement("span");
+  oldS.className = "slide-out-up";
+  oldS.textContent = oldChar;
+  cell.appendChild(oldS);
+
+  if (newChar) {
+    // El nuevo entra desde abajo.
+    const newS = document.createElement("span");
+    newS.className = "slide-in-up";
+    newS.style.position = "absolute";
+    newS.style.top = "0";
+    newS.style.left = "0";
+    newS.textContent = newChar;
+    cell.appendChild(newS);
+    setTimeout(() => {
+      oldS.remove();
+      newS.classList.remove("slide-in-up");
+      newS.style.position = "relative";
+    }, ODOMETER_ANIM);
+  } else {
+    setTimeout(() => cell.remove(), ODOMETER_ANIM);
+  }
+  return cell;
+}
+
 function setAnimatedText(el: HTMLElement, newText: string): void {
-  if (!el.classList.contains("odometer-wrapper")) {
-    el.classList.add("odometer-wrapper");
-    const span = document.createElement("span");
-    span.className = "inline-block whitespace-nowrap";
-    span.textContent = el.textContent ?? "";
-    el.textContent = "";
-    el.appendChild(span);
+  const oldText = getOdometerText(el);
+  if (oldText === newText) return;
+
+  el.textContent = "";
+  const len = Math.max(oldText.length, newText.length);
+  for (let i = 0; i < len; i++) {
+    const oc = oldText[i] ?? "";
+    const nc = newText[i] ?? "";
+    if (oc === nc) {
+      // El carácter no cambia: texto estático, sin animación.
+      el.appendChild(document.createTextNode(oc));
+    } else {
+      el.appendChild(makeOdigitCell(oc, nc));
+    }
   }
-  const currentSpan = el.querySelector<HTMLElement>("span");
-  if (!currentSpan) return;
-  if (currentSpan.textContent === newText) return;
-  if (newText === "" || odometerAnimating.has(el)) {
-    currentSpan.textContent = newText;
-    return;
-  }
-
-  const outClass = "slide-out-up";
-  const inClass = "slide-in-up";
-
-  const nextSpan = document.createElement("span");
-  nextSpan.textContent = newText;
-  nextSpan.className = `inline-block whitespace-nowrap ${inClass}`;
-  nextSpan.style.position = "absolute";
-  nextSpan.style.visibility = "hidden";
-  nextSpan.style.whiteSpace = "nowrap";
-  el.appendChild(nextSpan);
-
-  const endWidth = nextSpan.getBoundingClientRect().width;
-  const startWidth = el.getBoundingClientRect().width;
-
-  nextSpan.style.visibility = "visible";
-  nextSpan.style.top = "0";
-  nextSpan.style.left = "0";
-  nextSpan.style.width = "100%";
-  nextSpan.style.textAlign = "center";
-
-  el.style.width = `${startWidth}px`;
-  void el.offsetWidth;
-  el.style.transition = `width ${ODOMETER_ANIM}ms cubic-bezier(0.65, 0, 0.35, 1)`;
-  el.style.width = `${endWidth}px`;
-
-  currentSpan.className = `inline-block whitespace-nowrap ${outClass}`;
-  currentSpan.style.width = "100%";
-  currentSpan.style.textAlign = "center";
-
-  odometerAnimating.add(el);
-  setTimeout(() => {
-    currentSpan.remove();
-    nextSpan.className = "inline-block whitespace-nowrap";
-    nextSpan.style.position = "relative";
-    nextSpan.style.top = "";
-    nextSpan.style.left = "";
-    nextSpan.style.width = "";
-    nextSpan.style.textAlign = "";
-    nextSpan.style.visibility = "";
-    el.style.width = "";
-    el.style.transition = "";
-    odometerAnimating.delete(el);
-  }, ODOMETER_ANIM);
 }
 
 const isApp = !!api;
