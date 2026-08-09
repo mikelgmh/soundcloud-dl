@@ -36,6 +36,72 @@ try {
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
 
+// ---- Texto animado (efecto odómetro) ----
+const odometerAnimating = new WeakSet<HTMLElement>();
+const ODOMETER_ANIM = 300;
+
+function setAnimatedText(el: HTMLElement, newText: string): void {
+  if (!el.classList.contains("odometer-wrapper")) {
+    el.classList.add("odometer-wrapper");
+    const span = document.createElement("span");
+    span.className = "inline-block whitespace-nowrap";
+    span.textContent = el.textContent ?? "";
+    el.textContent = "";
+    el.appendChild(span);
+  }
+  const currentSpan = el.querySelector<HTMLElement>("span");
+  if (!currentSpan) return;
+  if (currentSpan.textContent === newText) return;
+  if (newText === "" || odometerAnimating.has(el)) {
+    currentSpan.textContent = newText;
+    return;
+  }
+
+  const outClass = "slide-out-up";
+  const inClass = "slide-in-up";
+
+  const nextSpan = document.createElement("span");
+  nextSpan.textContent = newText;
+  nextSpan.className = `inline-block whitespace-nowrap ${inClass}`;
+  nextSpan.style.position = "absolute";
+  nextSpan.style.visibility = "hidden";
+  nextSpan.style.whiteSpace = "nowrap";
+  el.appendChild(nextSpan);
+
+  const endWidth = nextSpan.getBoundingClientRect().width;
+  const startWidth = el.getBoundingClientRect().width;
+
+  nextSpan.style.visibility = "visible";
+  nextSpan.style.top = "0";
+  nextSpan.style.left = "0";
+  nextSpan.style.width = "100%";
+  nextSpan.style.textAlign = "center";
+
+  el.style.width = `${startWidth}px`;
+  void el.offsetWidth;
+  el.style.transition = `width ${ODOMETER_ANIM}ms cubic-bezier(0.65, 0, 0.35, 1)`;
+  el.style.width = `${endWidth}px`;
+
+  currentSpan.className = `inline-block whitespace-nowrap ${outClass}`;
+  currentSpan.style.width = "100%";
+  currentSpan.style.textAlign = "center";
+
+  odometerAnimating.add(el);
+  setTimeout(() => {
+    currentSpan.remove();
+    nextSpan.className = "inline-block whitespace-nowrap";
+    nextSpan.style.position = "relative";
+    nextSpan.style.top = "";
+    nextSpan.style.left = "";
+    nextSpan.style.width = "";
+    nextSpan.style.textAlign = "";
+    nextSpan.style.visibility = "";
+    el.style.width = "";
+    el.style.transition = "";
+    odometerAnimating.delete(el);
+  }, ODOMETER_ANIM);
+}
+
 const isApp = !!api;
 
 // ---- Cola de descargas ----
@@ -131,7 +197,7 @@ function appendLog(level: string, text: string): void {
 
 function updateStatus(stage: string, message: string): void {
   if (stage === "download") {
-    $<HTMLParagraphElement>("dl-stage").textContent = message;
+    setAnimatedText($<HTMLParagraphElement>("dl-stage"), message);
     const done = /completada|código|erro/i.test(message);
     if (done) {
       // La cola de descargas no resetea la vista ni lanza un toast por canción.
@@ -146,7 +212,7 @@ function updateStatus(stage: string, message: string): void {
       }
     } else {
       setDownloading(true);
-      $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+      showDlControls();
       if (!processingQueue) toast(message, "info", false, 3000);
     }
   } else if (stage === "likes" || stage === "login") {
@@ -223,16 +289,16 @@ function updateProgress(p: DownloadProgressPayload): void {
 
   $<HTMLParagraphElement>("dl-title").textContent =
     p.title || "Preparando...";
-  $<HTMLSpanElement>("dl-meta").textContent = p.eta ? `ETA ${p.eta}` : "";
+  setAnimatedText($<HTMLSpanElement>("dl-meta"), p.eta ? `ETA ${p.eta}` : "");
   $<HTMLDivElement>("dl-bar").style.width = `${Math.min(100, p.percent)}%`;
-  $<HTMLSpanElement>("dl-percent").textContent = `${Math.round(p.percent)}%`;
+  setAnimatedText($<HTMLSpanElement>("dl-percent"), `${Math.round(p.percent)}%`);
   const total = p.total || 0;
-  $<HTMLParagraphElement>("dl-count").textContent = total
+  setAnimatedText($<HTMLParagraphElement>("dl-count"), total
     ? `Canción ${p.current || 0} de ${total}`
     : p.percent > 0
       ? "Descargando..."
-      : "Preparando...";
-  $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+      : "Preparando...");
+  showDlControls();
 }
 
 // ---- Estado de descarga ----
@@ -246,10 +312,10 @@ function setDownloading(value: boolean): void {
   const text = $<HTMLElement>("sidebar-download-text");
   if (value) {
     el.classList.remove("hidden");
-    text.textContent =
+    setAnimatedText(text,
       trackTotal > 0
         ? `Descargando ${trackCurrent} de ${trackTotal} canciones`
-        : "Descargando canciones...";
+        : "Descargando canciones...");
   } else {
     el.classList.add("hidden");
     trackCurrent = 0;
@@ -259,11 +325,24 @@ function setDownloading(value: boolean): void {
 
 function resetDownloadUI(): void {
   $<HTMLDivElement>("dl-bar").style.width = "0%";
-  $<HTMLSpanElement>("dl-percent").textContent = "0%";
-  $<HTMLParagraphElement>("dl-count").textContent = "Sin descargas activas";
+  setAnimatedText($<HTMLSpanElement>("dl-percent"), "0%");
+  setAnimatedText($<HTMLParagraphElement>("dl-count"), "Sin descargas activas");
   $<HTMLParagraphElement>("dl-title").textContent = "—";
-  $<HTMLSpanElement>("dl-meta").textContent = "";
-  $<HTMLButtonElement>("btn-cancel").classList.add("hidden");
+  setAnimatedText($<HTMLSpanElement>("dl-meta"), "");
+  hideDlControls();
+}
+
+function showDlControls(): void {
+  const controls = $<HTMLElement>("dl-controls");
+  controls.classList.remove("hidden");
+  controls.classList.add("flex");
+}
+
+function hideDlControls(): void {
+  const controls = $<HTMLElement>("dl-controls");
+  controls.classList.add("hidden");
+  controls.classList.remove("flex");
+  $<HTMLButtonElement>("btn-pause").textContent = "Pausar";
 }
 
 // ---- Cola: botones con estado ----
@@ -298,6 +377,7 @@ function renderQueueItem(item: QueueItem): void {
     btn.className = DL_BTN_BASE;
     btn.textContent = "Descargar";
   }
+  updateQueueRowStatus(item);
 }
 
 function enqueueDownload(url: string, title: string, btn: HTMLButtonElement): void {
@@ -321,6 +401,7 @@ function enqueueDownload(url: string, title: string, btn: HTMLButtonElement): vo
     renderQueueItem(item);
   }
   toast(`En cola: ${title}`, "info", false, 2200);
+  renderQueue();
   if (!processingQueue) processQueue();
 }
 
@@ -362,6 +443,89 @@ function makeDownloadButton(t: { url: string; title: string }): HTMLButtonElemen
   return btn;
 }
 
+// ---- Lista de la cola (con paginación) ----
+const QUEUE_PAGE_SIZE = 15;
+let queuePage = 0;
+const queueStatusEls = new Map<string, HTMLElement>();
+
+function renderQueue(): void {
+  const list = $<HTMLElement>("queue-list");
+  const total = downloadQueue.length;
+  setAnimatedText($<HTMLElement>("queue-count"), `${total} canciones`);
+  const pages = Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE));
+  if (queuePage >= pages) queuePage = pages - 1;
+  const start = queuePage * QUEUE_PAGE_SIZE;
+  const slice = downloadQueue.slice(start, start + QUEUE_PAGE_SIZE);
+
+  queueStatusEls.clear();
+  list.textContent = "";
+  if (!slice.length) {
+    const p = document.createElement("p");
+    p.className = "text-xs text-ink-500";
+    p.textContent = "No hay descargas en la cola.";
+    list.appendChild(p);
+  }
+  slice.forEach((item, i) => list.appendChild(queueRow(item, start + i + 1)));
+
+  $<HTMLButtonElement>("queue-prev").disabled = queuePage === 0;
+  $<HTMLButtonElement>("queue-next").disabled = queuePage >= pages - 1;
+  setAnimatedText($<HTMLElement>("queue-page"), `${queuePage + 1} / ${pages}`);
+}
+
+function queueRow(item: QueueItem, index: number): HTMLElement {
+  const row = document.createElement("div");
+  row.className =
+    "flex items-center gap-3 rounded-lg border border-ink-800 bg-ink-850/60 px-3 py-2";
+  const num = document.createElement("span");
+  num.className = "w-6 shrink-0 text-xs text-ink-500 tabular-nums text-right";
+  num.textContent = String(index);
+  const title = document.createElement("p");
+  title.className = "flex-1 min-w-0 text-sm text-ink-100 truncate";
+  title.textContent = item.title;
+  const status = document.createElement("span");
+  status.className = "shrink-0 flex items-center gap-1 text-xs";
+  queueStatusEls.set(item.url, status);
+  row.appendChild(num);
+  row.appendChild(title);
+  row.appendChild(status);
+  updateQueueRowStatus(item);
+  return row;
+}
+
+function updateQueueRowStatus(item: QueueItem): void {
+  const status = queueStatusEls.get(item.url);
+  if (!status) return;
+  status.className = "shrink-0 flex items-center gap-1 text-xs";
+  if (item.status === "queued") {
+    status.className += " text-ink-400";
+    status.textContent = "En cola";
+  } else if (item.status === "downloading") {
+    status.className += " text-brand-300";
+    status.innerHTML =
+      `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
+  } else if (item.status === "done") {
+    status.className += " text-emerald-400";
+    status.textContent = "✓";
+  } else {
+    status.className += " text-red-400";
+    status.textContent = "Error";
+  }
+}
+
+$<HTMLButtonElement>("queue-prev").addEventListener("click", () => {
+  if (queuePage > 0) {
+    queuePage--;
+    renderQueue();
+  }
+});
+$<HTMLButtonElement>("queue-next").addEventListener("click", () => {
+  const pages = Math.max(1, Math.ceil(downloadQueue.length / QUEUE_PAGE_SIZE));
+  if (queuePage < pages - 1) {
+    queuePage++;
+    renderQueue();
+  }
+});
+
 // ---- Navegación ----
 const views = ["status", "download", "search", "collection", "settings", "developer"];
 
@@ -378,7 +542,7 @@ function showView(name: string): void {
   if (name === "download") {
     renderSyncStats();
     renderHistory();
-    renderCollections();
+    renderQueue();
   }
   if (name === "developer") {
     renderStats();
@@ -400,17 +564,17 @@ async function renderSyncStats(): Promise<void> {
     $<HTMLElement>("sync-bar").style.width = s.total
       ? `${Math.min(100, (s.downloaded / s.total) * 100)}%`
       : "0%";
-    $<HTMLElement>("sync-count").textContent =
-      `${s.downloaded} de ${s.total} descargadas`;
+    setAnimatedText($<HTMLElement>("sync-count"),
+      `${s.downloaded} de ${s.total} descargadas`);
     const btn = $<HTMLButtonElement>("btn-sync-missing");
     if (s.missing > 0) {
-      $<HTMLElement>("sync-text").textContent =
-        `Faltan ${s.missing} canciones por descargar`;
+      setAnimatedText($<HTMLElement>("sync-text"),
+        `Faltan ${s.missing} canciones por descargar`);
       btn.textContent = `Descargar faltantes (${s.missing})`;
       btn.classList.remove("opacity-50", "pointer-events-none");
     } else {
-      $<HTMLElement>("sync-text").textContent =
-        "Todas tus favoritas están descargadas";
+      setAnimatedText($<HTMLElement>("sync-text"),
+        "Todas tus favoritas están descargadas");
       btn.textContent = "Sincronizado";
       btn.classList.add("opacity-50", "pointer-events-none");
     }
@@ -716,12 +880,37 @@ $<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
   }),
 );
 
-$<HTMLButtonElement>("btn-cancel").addEventListener("click", () => {
+// ---- Control de descargas: pausar / reanudar / detener ----
+let downloadPaused = false;
+
+$<HTMLButtonElement>("btn-pause").addEventListener("click", () => {
   if (!guard()) return;
+  const btn = $<HTMLButtonElement>("btn-pause");
+  if (downloadPaused) {
+    api.request.resumeDownload({});
+    btn.textContent = "Pausar";
+    downloadPaused = false;
+  } else {
+    api.request.pauseDownload({});
+    btn.textContent = "Reanudar";
+    downloadPaused = true;
+  }
+});
+
+$<HTMLButtonElement>("btn-stop").addEventListener("click", () => {
+  if (!guard()) return;
+  clearQueue();
   setDownloading(false);
   resetDownloadUI();
   api.request.cancelDownload({});
 });
+
+function clearQueue(): void {
+  downloadQueue = [];
+  currentQueueItem = null;
+  queuePage = 0;
+  renderQueue();
+}
 
 // ---- Búsqueda ----
 function renderSearchEmpty(title: string, detail: string): void {
@@ -814,41 +1003,8 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
   const actions = document.createElement("div");
   actions.className = "flex items-center gap-2 shrink-0";
 
-  const collSelect = document.createElement("select");
-  collSelect.className =
-    "max-w-[120px] px-2 py-1.5 rounded-lg bg-ink-950 border border-ink-700 text-xs text-ink-200 focus:border-brand-500 focus:outline-none transition-colors";
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "+ Colección";
-  collSelect.appendChild(placeholder);
-  collSelect.addEventListener("change", async () => {
-    const name = collSelect.value;
-    collSelect.value = "";
-    if (!name || !guard()) return;
-    try {
-      await api.request.addTrackToCollection({ name, trackId: t.id });
-      toast(`Añadida a "${name}"`, "success");
-    } catch (err) {
-      toast((err as Error).message, "error", true);
-    }
-  });
-  (async () => {
-    try {
-      const res = await api.request.getCollections({});
-      for (const c of res.collections) {
-        const opt = document.createElement("option");
-        opt.value = c.name;
-        opt.textContent = c.name;
-        collSelect.appendChild(opt);
-      }
-    } catch {
-      // sin colecciones
-    }
-  })();
-
   const btn = makeDownloadButton(t);
 
-  actions.appendChild(collSelect);
   actions.appendChild(btn);
 
   card.appendChild(thumb);
@@ -876,7 +1032,7 @@ $<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
     showView("download");
     $<HTMLDivElement>("dev-log").textContent = "";
     $<HTMLParagraphElement>("dl-title").textContent = url;
-    $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+    showDlControls();
     await api.request.downloadUrl({ url });
     await renderSyncStats();
     await renderHistory();
@@ -1115,86 +1271,6 @@ $<HTMLButtonElement>("config-apply").addEventListener("click", () =>
   }),
 );
 
-// ---- Colecciones ----
-async function renderCollections(): Promise<void> {
-  if (!isApp) return;
-  try {
-    const res = await api.request.getCollections({});
-    const list = $<HTMLElement>("collections-list");
-    list.textContent = "";
-    if (!res.collections.length) {
-      const p = document.createElement("p");
-      p.className = "text-xs text-ink-500";
-      p.textContent = "Aún no tienes colecciones.";
-      list.appendChild(p);
-      return;
-    }
-    for (const coll of res.collections) {
-      const row = document.createElement("div");
-      row.className =
-        "flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-850/60 px-4 py-2.5";
-      const info = document.createElement("div");
-      info.className = "flex-1 min-w-0";
-      const name = document.createElement("p");
-      name.className = "text-sm font-medium text-ink-100 truncate";
-      name.textContent = coll.name;
-      const count = document.createElement("p");
-      count.className = "text-xs text-ink-400 tabular-nums";
-      count.textContent = `${coll.trackIds.length} canciones`;
-      info.appendChild(name);
-      info.appendChild(count);
-
-      const dl = document.createElement("button");
-      dl.className =
-        "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white transition-all";
-      dl.textContent = "Descargar";
-      dl.addEventListener("click", () =>
-        withBusy("", async () => {
-          if (!guard()) return;
-          $<HTMLDivElement>("dev-log").textContent = "";
-          await api.request.downloadCollection({ name: coll.name });
-          await renderSyncStats();
-          await renderHistory();
-        }),
-      );
-      const rm = document.createElement("button");
-      rm.className =
-        "px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors";
-      rm.textContent = "Eliminar";
-      rm.addEventListener("click", () =>
-        withBusy("", async () => {
-          if (!guard()) return;
-          await api.request.removeCollection({ name: coll.name });
-          await renderCollections();
-        }),
-      );
-      row.appendChild(info);
-      row.appendChild(dl);
-      row.appendChild(rm);
-      list.appendChild(row);
-    }
-  } catch {
-    // sin red
-  }
-}
-
-$<HTMLButtonElement>("btn-create-collection").addEventListener("click", () =>
-  withBusy("btn-create-collection", async () => {
-    if (!guard()) return;
-    const name = $<HTMLInputElement>("collection-input").value.trim();
-    if (!name) {
-      toast("Escribe un nombre para la colección", "warn");
-      return;
-    }
-    await api.request.createCollection({ name });
-    $<HTMLInputElement>("collection-input").value = "";
-    toast(`Colección "${name}" creada`, "success");
-    await renderCollections();
-  }),
-);
-$<HTMLInputElement>("collection-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $<HTMLButtonElement>("btn-create-collection").click();
-});
 
 // ---- Estadísticas (vista desarrollador) ----
 async function renderStats(): Promise<void> {
@@ -1312,8 +1388,8 @@ function startDownloadView(label: string): void {
   $<HTMLDivElement>("dev-log").textContent = "";
   resetDownloadUI();
   $<HTMLParagraphElement>("dl-title").textContent = label;
-  $<HTMLParagraphElement>("dl-count").textContent = "Preparando...";
-  $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+  setAnimatedText($<HTMLParagraphElement>("dl-count"), "Preparando...");
+  showDlControls();
   setDownloading(true);
 }
 

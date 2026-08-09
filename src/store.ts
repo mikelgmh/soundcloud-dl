@@ -150,27 +150,3 @@ export function readHistory(limit = 30): HistoryItem[] {
     return [];
   }
 }
-
-// ---- Colecciones ----
-
-export interface Collection {
-  name: string;
-  trackIds: string[];
-}
-
-const COLLECTIONS_FILE = path.join(SND_DIR, 'collections.json');
-
-export function loadCollections(): Collection[] {
-  try {
-    const raw = JSON.parse(fs.readFileSync(COLLECTIONS_FILE, 'utf8'));
-    if (Array.isArray(raw)) return raw as Collection[];
-    return [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveCollections(list: Collection[]): void {
-  fs.mkdirSync(SND_DIR, { recursive: true });
-  fs.writeFileSync(COLLECTIONS_FILE, JSON.stringify(list, null, 2), { mode: 0o600 });
-}

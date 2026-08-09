@@ -24,24 +24,20 @@ import {
   appendHistory,
   ARCHIVE_FILE,
   BIN_DIR,
-  loadCollections,
   loadConfig,
   loadLikesCache,
   readArchiveIds,
   readHistory,
-  saveCollections,
   saveConfig,
   saveLikesCache,
   writeCookiesFile,
-  type Collection,
   type Config,
   type LikedTrack,
 } from "../store";
 import { clearSoundCloudSession } from "./login";
-import { runStream } from "../util";
+import { runStream, type ProcessController } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
-  CollectionPayload,
   ConfigPayload,
   DepsStatus,
   DownloadProgressPayload,
@@ -110,6 +106,7 @@ export class Service {
   private deps: Deps | null = null;
   private config: Config = loadConfig();
   private abort: AbortController | null = null;
+  private controller: ProcessController | null = null;
   private versionsCache: { ytdlp: ToolVersion; ffmpeg: ToolVersion } | null = null;
 
   constructor(
@@ -433,67 +430,9 @@ export class Service {
     return { items: readHistory(30) };
   }
 
-  // ---- Colecciones ----
-
-  getCollections(): { collections: CollectionPayload[] } {
-    return { collections: loadCollections() };
-  }
-
-  createCollection(name: string): { ok: boolean } {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error("El nombre no puede estar vacío.");
-    const list = loadCollections();
-    if (list.some((c) => c.name === trimmed)) {
-      throw new Error("Ya existe una colección con ese nombre.");
-    }
-    list.push({ name: trimmed, trackIds: [] });
-    saveCollections(list);
-    return { ok: true };
-  }
-
-  removeCollection(name: string): { ok: boolean } {
-    saveCollections(loadCollections().filter((c) => c.name !== name));
-    return { ok: true };
-  }
-
-  addTrackToCollection(name: string, trackId: string): { ok: boolean } {
-    const list = loadCollections();
-    const coll = list.find((c) => c.name === name);
-    if (!coll) throw new Error("Colección no encontrada.");
-    if (!coll.trackIds.includes(trackId)) coll.trackIds.push(trackId);
-    saveCollections(list);
-    return { ok: true };
-  }
-
-  removeTrackFromCollection(name: string, trackId: string): { ok: boolean } {
-    const list = loadCollections();
-    const coll = list.find((c) => c.name === name);
-    if (!coll) return { ok: true };
-    coll.trackIds = coll.trackIds.filter((id) => id !== trackId);
-    saveCollections(list);
-    return { ok: true };
-  }
-
-  /** Descarga solo las canciones de una colección. */
-  async downloadCollection(name: string): Promise<{ ok: boolean; code: number }> {
-    const config = this.requireDownloadConfig();
-    const coll = loadCollections().find((c) => c.name === name);
-    if (!coll) throw new Error("Colección no encontrada.");
-    const tracks = this.getLikesCache().tracks;
-    const urls = tracks
-      .filter((t) => coll.trackIds.includes(t.id))
-      .map((t) => t.url);
-    if (urls.length === 0) throw new Error("La colección no tiene canciones.");
-    const outDir = config.outdir || DEFAULT_OUTDIR;
-    fs.mkdirSync(outDir, { recursive: true });
-    return this.runDownload(
-      buildDownloadArgs({ ...this.downloadOpts(config, outDir), urls }),
-      `Descargando colección "${name}"...`,
-    );
-  }
-
   /** Borra archivos descargados que ya no están en favoritos. */
-  async cleanupNonFavorites(): Promise<{ removed: string[] }> {    const config = this.requireDownloadConfig();
+  async cleanupNonFavorites(): Promise<{ removed: string[] }> {
+    const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     const favIds = new Set(this.getLikesCache().tracks.map((t) => t.id));
     const archive = readArchiveIds();
@@ -585,6 +524,18 @@ export class Service {
     return { ok: true };
   }
 
+  pauseDownload(): { ok: boolean } {
+    this.controller?.pause();
+    this.emitter.log("info", "Descarga pausada.");
+    return { ok: true };
+  }
+
+  resumeDownload(): { ok: boolean } {
+    this.controller?.resume();
+    this.emitter.log("info", "Descarga reanudada.");
+    return { ok: true };
+  }
+
   private requireDownloadConfig(): Config {
     const { username, oauthToken, outdir } = this.config;
     if (!username || !oauthToken) {
@@ -629,6 +580,7 @@ export class Service {
       args[0] = deps.ytdlp;
       this.emitter.status("download", message);
       this.abort = new AbortController();
+      this.controller = { pause() {}, resume() {} };
       const tracker = new DownloadTracker((p) => this.emitter.progress(p));
       const code = await runStream(args, {
         onStdout: (line) => {
@@ -642,8 +594,10 @@ export class Service {
           tracker.handle(line);
         },
         signal: this.abort.signal,
+        controller: this.controller,
       });
       this.abort = null;
+      this.controller = null;
       tracker.handle("");
       this.emitter.status(
         "download",
