@@ -80,13 +80,16 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
 export async function fetchFlatEntries(
   url: string,
   opts: CountOptions,
+  mode: 'flat' | 'full' = 'flat',
 ): Promise<{ entries: LikedTrack[]; tokenInvalid: boolean }> {
   const args = [
     opts.ytdlp,
     ...authArgs(opts),
     ...ffmpegLocationArgs(opts),
     '--impersonate', 'chrome',
-    '--flat-playlist',
+    // En modo 'full' se resuelve cada canción (necesario para obtener el
+    // título en los sets; en modo plano yt-dlp lo descarta).
+    ...(mode === 'flat' ? ['--flat-playlist'] : []),
     '--dump-json',
     url,
   ];
@@ -103,13 +106,18 @@ export async function fetchFlatEntries(
     .forEach((line, i) => {
       try {
         const j = JSON.parse(line);
-        if (j && j.url) {
-          const m = String(j.url).match(/soundcloud\.com\/([^/]+)\//);
+        if (j && (j.url || j.webpage_url)) {
+          // En modo completo la URL es el stream; la página es webpage_url.
+          const pageUrl = mode === 'full'
+            ? (j.webpage_url ?? j.url)
+            : (j.url ?? j.webpage_url);
+          const m = String(pageUrl).match(/soundcloud\.com\/([^/]+)\//);
           entries.push({
             id: String(j.id ?? i),
             title: j.title ?? `Elemento ${i}`,
-            url: j.url ?? j.webpage_url,
-            uploader: m?.[1],
+            url: pageUrl,
+            uploader:
+              mode === 'full' ? (j.uploader ?? m?.[1]) : (m?.[1]),
             index: i,
           });
         }

@@ -557,7 +557,7 @@ export class Service {
       ffmpegDir: deps.ffmpegDir,
       cookiesFile: writeCookiesFile(config.oauthToken!),
       username: config.username!,
-    });
+    }, 'full');
     return { tracks: entries, tokenInvalid };
   }
 
