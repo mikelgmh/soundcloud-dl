@@ -1443,7 +1443,7 @@ function seedSettings(c: ConfigPayload): void {
   if (!langUserSet) {
     setLang(resolveLang(c.lang));
   }
-  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s [%(id)s]");
+  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s");
   updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");

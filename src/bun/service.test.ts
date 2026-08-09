@@ -146,7 +146,7 @@ describe("Service: configuración", () => {
   it("migra la plantilla legacy al valor por defecto", () => {
     const s = makeService();
     s.saveConfig({ filenameTemplate: "%(uploader)s - %(title)s [%(id)s]" });
-    expect(s.getConfig().filenameTemplate).toBe("%(title)s - %(artist)s [%(id)s]");
+    expect(s.getConfig().filenameTemplate).toBe("%(title)s - %(artist)s");
   });
 });
 

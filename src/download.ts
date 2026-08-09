@@ -35,9 +35,7 @@ export interface DownloadOptions extends Session {
   archiveFile?: string;
 }
 
-// La plantilla por defecto incluye [%(id)s] para poder detectar de forma
-// fiable qué canciones están descargadas (el id es único por pista).
-export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s [%(id)s]';
+export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s';
 
 const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'];
 

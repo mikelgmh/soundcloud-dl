@@ -52,7 +52,7 @@ describe("buildDownloadArgs", () => {
   it("pasa el archivo de cookies y -o con la plantilla", () => {
     const a = argsOf();
     expect(a).toEqual(expect.arrayContaining(["--cookies", "/cookies.txt"]));
-    expect(a[a.indexOf("-o") + 1]).toBe("/out/%(title)s - %(artist)s [%(id)s].%(ext)s");
+    expect(a[a.indexOf("-o") + 1]).toBe("/out/%(title)s - %(artist)s.%(ext)s");
   });
 
   it("el formato 'original' no convierte", () => {
@@ -113,7 +113,7 @@ describe("buildDownloadArgs", () => {
 });
 
 describe("trackHasDownloadedFile", () => {
-  const TEMPLATE = "%(title)s - %(artist)s [%(id)s]";
+  const TEMPLATE = "%(title)s - %(artist)s";
 
   it("coincide por id en el nombre del fichero", () => {
     expect(

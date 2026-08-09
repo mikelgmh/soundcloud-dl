@@ -27,7 +27,7 @@ Download the installer for your operating system (latest release):
 
 - **Download favorites, playlists and use global search** on SoundCloud from inside the app.
 - **Configurable format and quality**: `mp3`, `m4a`, `opus`, `flac`, `wav`, `vorbis` and `original`, with configurable bitrate (320K, 192K...).
-- **File name template** with chips (Title, Uploader, ID...), e.g. `%(title)s - %(artist)s [%(id)s]`.
+- **File name template** with chips (Title, Uploader, ID...), e.g. `%(title)s - %(artist)s`.
 - **Sign in to SoundCloud** via the native system webview (no token stored in plain text long-term); the session is kept as an `oauth_token` cookie.
 - **Anti-bot**: strictly sequential, serialized downloads, no parallelism.
 - **Download queue** with pause/resume/stop, per-track progress (%, ETA, speed), history and a per-track "Downloaded" state.
