@@ -511,8 +511,8 @@ export class Service {
   }
 
   /** Comprueba si la cuenta puede descargar en alta calidad. Usa yt-dlp (que
-   *  pasa DataDome, igual que las descargas) sobre un favorito y mira si hay
-   *  formatos >= 256 kbps / Premium. */
+   *  pasa DataDome, igual que las descargas) sobre varios favoritos y mira si
+   *  alguno ofrece formatos >= 256 kbps / Premium. */
   async checkStreamingQuality(): Promise<{
     checked: boolean;
     highQuality: boolean;
@@ -521,8 +521,11 @@ export class Service {
     if (!this.config.oauthToken) {
       return { checked: false, highQuality: false, error: "sin sesión" };
     }
-    const trackUrl = this.getLikesCache().tracks[0]?.url;
-    if (!trackUrl) {
+    const trackUrls = this.getLikesCache()
+      .tracks.slice(0, 3)
+      .map((t) => t.url)
+      .filter(Boolean);
+    if (trackUrls.length === 0) {
       return { checked: false, highQuality: false, error: "Sin favoritos" };
     }
     try {
@@ -539,26 +542,41 @@ export class Service {
           cookiesFile,
           "--impersonate",
           "chrome",
-          "--skip-download",
-          "-J",
-          trackUrl,
+          "-j",
+          ...trackUrls,
         ],
         { capture: true },
       );
       if (code !== 0) {
         throw new Error(stderr.trim().slice(-200) || `yt-dlp ${code}`);
       }
-      const info = JSON.parse(stdout);
-      const formats: {
-        abr?: number;
-        format_note?: string;
-        format_id?: string;
-      }[] = info?.formats ?? [];
-      const highQuality = formats.some(
-        (f) =>
-          (f?.abr ?? 0) >= 256 ||
-          /premium|256k/i.test(`${f?.format_note ?? ""} ${f?.format_id ?? ""}`),
-      );
+      let highQuality = false;
+      for (const line of stdout.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const info = JSON.parse(trimmed);
+          const formats: {
+            abr?: number;
+            format_note?: string;
+            format_id?: string;
+          }[] = info?.formats ?? [];
+          if (
+            formats.some(
+              (f) =>
+                (f?.abr ?? 0) >= 256 ||
+                /premium|256k/i.test(
+                  `${f?.format_note ?? ""} ${f?.format_id ?? ""}`,
+                ),
+            )
+          ) {
+            highQuality = true;
+            break;
+          }
+        } catch {
+          // línea no JSON: se ignora
+        }
+      }
       return { checked: true, highQuality };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
