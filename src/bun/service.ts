@@ -608,57 +608,71 @@ export class Service {
     };
   }
 
-  private async runDownload(
+  /** Serializa las descargas: solo se ejecuta una a la vez (anti-baneo). */
+  private downloadChain: Promise<unknown> = Promise.resolve();
+
+  private enqueueRun<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.downloadChain.then(fn, fn);
+    this.downloadChain = p.then(
+      () => undefined,
+      () => undefined,
+    );
+    return p;
+  }
+
+  private runDownload(
     args: string[],
     message: string,
   ): Promise<{ ok: boolean; code: number }> {
-    const deps = await this.ensureDepsReady();
-    args[0] = deps.ytdlp;
-    this.emitter.status("download", message);
-    this.abort = new AbortController();
-    const tracker = new DownloadTracker((p) => this.emitter.progress(p));
-    const code = await runStream(args, {
-      onStdout: (line) => {
-        if (!/^\[download\]\s+\d+(?:\.\d+)?%/.test(line)) {
+    return this.enqueueRun(async () => {
+      const deps = await this.ensureDepsReady();
+      args[0] = deps.ytdlp;
+      this.emitter.status("download", message);
+      this.abort = new AbortController();
+      const tracker = new DownloadTracker((p) => this.emitter.progress(p));
+      const code = await runStream(args, {
+        onStdout: (line) => {
+          if (!/^\[download\]\s+\d+(?:\.\d+)?%/.test(line)) {
+            this.emitter.log("info", line);
+          }
+          tracker.handle(line);
+        },
+        onStderr: (line) => {
           this.emitter.log("info", line);
-        }
-        tracker.handle(line);
-      },
-      onStderr: (line) => {
-        this.emitter.log("info", line);
-        tracker.handle(line);
-      },
-      signal: this.abort.signal,
-    });
-    this.abort = null;
-    tracker.handle("");
-    this.emitter.status(
-      "download",
-      code === 0 ? "Descarga completada" : `Descarga terminó con código ${code}`,
-    );
+          tracker.handle(line);
+        },
+        signal: this.abort.signal,
+      });
+      this.abort = null;
+      tracker.handle("");
+      this.emitter.status(
+        "download",
+        code === 0 ? "Descarga completada" : `Descarga terminó con código ${code}`,
+      );
 
-    // Historial + notificación del sistema al terminar.
-    const target = this.downloadUrlTarget(args);
-    appendHistory({
-      ts: Date.now(),
-      target,
-      format: this.config.format ?? "mp3",
-      ok: code === 0,
-    });
-    if (code === 0) {
-      try {
-        Utils.showNotification({
-          title: "Descarga completada",
-          body:
-            target === "favoritos"
-              ? "Se ha sincronizado tu lista de favoritos."
-              : `Se ha descargado: ${target}`,
-        });
-      } catch {
-        // las notificaciones no son críticas
+      // Historial + notificación del sistema al terminar.
+      const target = this.downloadUrlTarget(args);
+      appendHistory({
+        ts: Date.now(),
+        target,
+        format: this.config.format ?? "mp3",
+        ok: code === 0,
+      });
+      if (code === 0) {
+        try {
+          Utils.showNotification({
+            title: "Descarga completada",
+            body:
+              target === "favoritos"
+                ? "Se ha sincronizado tu lista de favoritos."
+                : `Se ha descargado: ${target}`,
+          });
+        } catch {
+          // las notificaciones no son críticas
+        }
       }
-    }
-    return { ok: code === 0, code };
+      return { ok: code === 0, code };
+    });
   }
 
   /** Extrae de los args el destino de la descarga (para historial/notificación). */

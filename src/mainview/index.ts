@@ -38,6 +38,18 @@ const $ = <T extends HTMLElement>(id: string): T =>
 
 const isApp = !!api;
 
+// ---- Cola de descargas ----
+interface QueueItem {
+  url: string;
+  title: string;
+  status: "queued" | "downloading" | "done" | "error";
+  percent: number;
+  button: HTMLButtonElement | null;
+}
+let downloadQueue: QueueItem[] = [];
+let processingQueue = false;
+let currentQueueItem: QueueItem | null = null;
+
 // ---- Toasts ----
 function toast(
   message: string,
@@ -122,19 +134,20 @@ function updateStatus(stage: string, message: string): void {
     $<HTMLParagraphElement>("dl-stage").textContent = message;
     const done = /completada|código|erro/i.test(message);
     if (done) {
-      // La descarga ha terminado: el bloque vuelve al estado vacío.
-      setDownloading(false);
-      resetDownloadUI();
+      // La cola de descargas no resetea la vista ni lanza un toast por canción.
+      if (!processingQueue) {
+        setDownloading(false);
+        resetDownloadUI();
+        if (/completada/i.test(message)) {
+          toast(message, "success");
+        } else {
+          toast(message, "warn");
+        }
+      }
     } else {
       setDownloading(true);
       $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
-    }
-    if (/completada/i.test(message)) {
-      toast(message, "success");
-    } else if (done) {
-      toast(message, "warn");
-    } else {
-      toast(message, "info", false, 3000);
+      if (!processingQueue) toast(message, "info", false, 3000);
     }
   } else if (stage === "likes" || stage === "login") {
     toast(message, "info");
@@ -203,6 +216,11 @@ function updateProgress(p: DownloadProgressPayload): void {
   trackTotal = p.total || 0;
   setDownloading(true);
 
+  if (currentQueueItem) {
+    currentQueueItem.percent = p.percent;
+    renderQueueItem(currentQueueItem);
+  }
+
   $<HTMLParagraphElement>("dl-title").textContent =
     p.title || "Preparando...";
   $<HTMLSpanElement>("dl-meta").textContent = p.eta ? `ETA ${p.eta}` : "";
@@ -246,6 +264,102 @@ function resetDownloadUI(): void {
   $<HTMLParagraphElement>("dl-title").textContent = "—";
   $<HTMLSpanElement>("dl-meta").textContent = "";
   $<HTMLButtonElement>("btn-cancel").classList.add("hidden");
+}
+
+// ---- Cola: botones con estado ----
+const DL_BTN_BASE =
+  "inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all shrink-0";
+
+function circularLoaderSVG(percent: number): string {
+  const r = 9;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.min(100, Math.max(0, percent)) / 100);
+  return `<svg width="14" height="14" viewBox="0 0 24 24" class="inline-block align-middle">
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="2.5"/>
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" transform="rotate(-90 12 12)"/>
+  </svg>`;
+}
+
+function renderQueueItem(item: QueueItem): void {
+  if (!item.button) return;
+  const btn = item.button;
+  if (item.status === "queued") {
+    btn.disabled = true;
+    btn.className = DL_BTN_BASE + " opacity-60 cursor-default";
+    btn.textContent = "En cola";
+  } else if (item.status === "downloading") {
+    btn.disabled = true;
+    btn.className = DL_BTN_BASE + " cursor-default";
+    btn.innerHTML =
+      `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
+  } else {
+    btn.disabled = false;
+    btn.className = DL_BTN_BASE;
+    btn.textContent = "Descargar";
+  }
+}
+
+function enqueueDownload(url: string, title: string, btn: HTMLButtonElement): void {
+  if (!guard()) return;
+  const existing = downloadQueue.find((q) => q.url === url);
+  if (
+    existing &&
+    (existing.status === "queued" || existing.status === "downloading")
+  ) {
+    toast("Esa canción ya está en la cola", "warn");
+    return;
+  }
+  const item: QueueItem = { url, title, status: "queued", percent: 0, button: btn };
+  if (existing) {
+    existing.status = "queued";
+    existing.percent = 0;
+    existing.button = btn;
+    renderQueueItem(existing);
+  } else {
+    downloadQueue.push(item);
+    renderQueueItem(item);
+  }
+  toast(`En cola: ${title}`, "info", false, 2200);
+  if (!processingQueue) processQueue();
+}
+
+async function processQueue(): Promise<void> {
+  if (processingQueue) return;
+  processingQueue = true;
+  try {
+    while (true) {
+      currentQueueItem =
+        downloadQueue.find((q) => q.status === "queued") ?? null;
+      if (!currentQueueItem) break;
+      currentQueueItem.status = "downloading";
+      renderQueueItem(currentQueueItem);
+      try {
+        await api.request.downloadTrack({ url: currentQueueItem.url });
+        currentQueueItem.status = "done";
+        currentQueueItem.percent = 100;
+      } catch (err) {
+        currentQueueItem.status = "error";
+        toast((err as Error).message, "error", true);
+      }
+      renderQueueItem(currentQueueItem);
+      await renderSyncStats();
+      await renderHistory();
+    }
+  } finally {
+    processingQueue = false;
+    currentQueueItem = null;
+    setDownloading(false);
+    resetDownloadUI();
+  }
+}
+
+function makeDownloadButton(t: { url: string; title: string }): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.className = DL_BTN_BASE;
+  btn.textContent = "Descargar";
+  btn.addEventListener("click", () => enqueueDownload(t.url, t.title, btn));
+  return btn;
 }
 
 // ---- Navegación ----
@@ -732,21 +846,7 @@ function trackCard(t: LikedTrackPayload): HTMLElement {
     }
   })();
 
-  const btn = document.createElement("button");
-  btn.className =
-    "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all";
-  btn.textContent = "Descargar";
-  btn.addEventListener("click", () =>
-    withBusy("", async () => {
-      if (!guard()) return;
-      showView("download");
-      $<HTMLDivElement>("dev-log").textContent = "";
-      $<HTMLParagraphElement>("dl-title").textContent = t.title;
-      $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
-      await api.request.downloadTrack({ url: t.url });
-      await renderSyncStats();
-    }),
-  );
+  const btn = makeDownloadButton(t);
 
   actions.appendChild(collSelect);
   actions.appendChild(btn);
@@ -1200,19 +1300,7 @@ function collectionTrackRow(t: LikedTrackPayload): HTMLElement {
   info.appendChild(title);
   info.appendChild(sub);
 
-  const btn = document.createElement("button");
-  btn.className =
-    "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all shrink-0";
-  btn.textContent = "Descargar";
-  btn.addEventListener("click", () =>
-    withBusy("", async () => {
-      if (!guard()) return;
-      startDownloadView(t.title);
-      await api.request.downloadTrack({ url: t.url });
-      await renderSyncStats();
-      await renderHistory();
-    }),
-  );
+  const btn = makeDownloadButton(t);
 
   row.appendChild(info);
   row.appendChild(btn);
