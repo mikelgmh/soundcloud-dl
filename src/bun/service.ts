@@ -293,13 +293,14 @@ export class Service {
       : DEFAULT_FILENAME_TEMPLATE;
   }
 
-  /** Bitrate por defecto según el formato (ninguno supera 256 kbps). */
+  /** Bitrate por defecto según el formato (MP3 necesita ~320k para igualar
+   *  la calidad AAC 256k; el resto no supera 256k). */
   private defaultBitrate(format?: string): string {
     switch (format) {
       case 'm4a':
         return '256K';
       case 'mp3':
-        return '256K';
+        return '320K';
       case 'opus':
         return '128K';
       case 'vorbis':

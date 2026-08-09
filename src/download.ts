@@ -39,11 +39,12 @@ export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s';
 
 const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'];
 
-// Bitrate por defecto según el formato. Ninguno supera 256 kbps: la fuente de
-// SoundCloud es AAC 256k y un bitrate mayor no aporta calidad, solo peso.
+// Bitrate por defecto según el formato. AAC/Opus/Vorbis no superan lo que
+// aporta la fuente (AAC 256k); MP3 es menos eficiente y necesita ~320k para
+// igualar esa calidad.
 const DEFAULT_BITRATE: Record<string, string> = {
   m4a: '256K',
-  mp3: '256K',
+  mp3: '320K',
   opus: '128K',
   vorbis: '192K',
 };

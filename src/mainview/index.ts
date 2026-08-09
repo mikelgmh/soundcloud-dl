@@ -1432,11 +1432,12 @@ $<HTMLSelectElement>("set-theme").addEventListener("change", () => {
   applyTheme($<HTMLSelectElement>("set-theme").value);
 });
 
-/** Bitrates disponibles según el formato. Ninguno supera 256 kbps: la fuente
- *  es AAC 256k y un bitrate mayor solo añade peso sin mejorar la calidad. */
+/** Bitrates disponibles según el formato. AAC/Opus/Vorbis no superan lo que
+ *  aporta la fuente (AAC 256k); MP3 es menos eficiente, así que necesita ~320k
+ *  para igualar esa calidad. */
 const FORMAT_BITRATES: Record<string, string[]> = {
   m4a: ["256K", "192K", "128K", "96K", "64K"],
-  mp3: ["256K", "192K", "128K", "96K", "64K"],
+  mp3: ["320K", "256K", "192K", "128K", "96K", "64K"],
   opus: ["160K", "128K", "96K", "64K"],
   vorbis: ["192K", "160K", "128K", "96K", "64K"],
   flac: [],
@@ -1447,7 +1448,7 @@ const FORMAT_BITRATES: Record<string, string[]> = {
 /** Bitrate por defecto por formato (coincide con el del proceso main). */
 const FORMAT_DEFAULT_BITRATE: Record<string, string> = {
   m4a: "256K",
-  mp3: "256K",
+  mp3: "320K",
   opus: "128K",
   vorbis: "192K",
 };
