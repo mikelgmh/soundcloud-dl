@@ -13,7 +13,8 @@
     "build:css": "bunx @tailwindcss/cli -i src/mainview/input.css -o src/mainview/index.css",
     "build:desktop": "electrobun build",
     "build:stable": "electrobun build --env=stable",
-    "build:canary": "electrobun build --env=canary"
+    "build:canary": "electrobun build --env=canary",
+    "build:mac:intel": "bun run build:stable"
   },
   "dependencies": {
     "@clack/prompts": "^0.10.1",
