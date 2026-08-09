@@ -438,9 +438,14 @@ $<HTMLButtonElement>("btn-check-update").addEventListener("click", async () => {
 });
 
 function updateProgress(p: DownloadProgressPayload): void {
+  // Cuando avanza a una canción nueva del lote, la anterior acaba de
+  // completarse: refrescamos el contador de descargadas.
+  const songAdvanced = p.current > 0 && p.current !== trackCurrent;
   trackCurrent = p.current || 0;
   trackTotal = p.total || 0;
   setDownloading(true);
+
+  if (songAdvanced) scheduleSyncStatsRefresh();
 
   if (currentQueueItem) {
     currentQueueItem.percent = p.percent;
@@ -465,6 +470,18 @@ function updateProgress(p: DownloadProgressPayload): void {
 let downloading = false;
 let trackCurrent = 0;
 let trackTotal = 0;
+let syncStatsTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Refresca (con debounce) el contador de descargadas y los checks. */
+function scheduleSyncStatsRefresh(): void {
+  if (syncStatsTimer) clearTimeout(syncStatsTimer);
+  syncStatsTimer = setTimeout(() => {
+    syncStatsTimer = null;
+    if (!isApp) return;
+    renderSyncStats();
+    refreshDownloadedIds();
+  }, 800);
+}
 
 function setDownloading(value: boolean): void {
   downloading = value;
@@ -632,6 +649,13 @@ async function processQueue(): Promise<void> {
       currentQueueItem =
         downloadQueue.find((q) => q.status === "queued") ?? null;
       if (!currentQueueItem) break;
+      // Si el fichero ya existe en disco, se salta sin llamar a yt-dlp.
+      if (downloadedIds.has(currentQueueItem.id)) {
+        currentQueueItem.status = "done";
+        currentQueueItem.percent = 100;
+        renderQueueItem(currentQueueItem);
+        continue;
+      }
       currentQueueItem.status = "downloading";
       renderQueueItem(currentQueueItem);
       try {
