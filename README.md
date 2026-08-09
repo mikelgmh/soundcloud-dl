@@ -181,3 +181,7 @@ bun run cli --yes --token <t> --username <u> --outdir <dir>   # non-interactive
 | `bun run build:windows` | Windows stable build + `.exe` installer |
 | `bun run build:css` | Compile Tailwind |
 | `bun run cli` | Download CLI |
+
+## License
+
+[MIT](LICENSE) © mikelgmh

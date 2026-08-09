@@ -1718,10 +1718,36 @@ $<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
   renderCollection();
 });
 
+// ---- Acerca de ----
+
+// Abre enlaces externos (repo, licencia) en el navegador del sistema.
+document.addEventListener("click", (e) => {
+  const el = (e.target as HTMLElement | null)?.closest?.("[data-open-url]");
+  if (!el || !isApp) return;
+  e.preventDefault();
+  const url = (el as HTMLElement).dataset.openUrl;
+  if (url) api.request.openExternal({ url }).catch(() => {});
+});
+
+async function initAbout(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const info = await api.request.getAppInfo({});
+    const suffix =
+      info.channel && info.channel !== "stable" ? ` (${info.channel})` : "";
+    $<HTMLElement>("about-version").textContent = `v${info.version}${suffix}`;
+    $<HTMLElement>("about-repo").dataset.openUrl = info.repo;
+    $<HTMLElement>("about-license").dataset.openUrl = info.licenseUrl;
+  } catch {
+    // Sin puente (dev) o fallo: se dejan los valores por defecto del HTML.
+  }
+}
+
 // ---- Arranque ----
 resetDownloadUI();
 showView("status");
 refreshDownloadedIds();
+initAbout();
 (async () => {
   let s = await loadStatus();
   if (s && !s.deps.ready) {

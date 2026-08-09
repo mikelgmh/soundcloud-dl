@@ -24,6 +24,11 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       checkForUpdates: async () => service.checkForUpdates(),
       checkAppUpdate: async () => checkAppUpdate(),
       getConfig: async () => service.getConfig(),
+      getAppInfo: async () => {
+        const info = await Updater.getLocalInfo();
+        return service.getAppInfo({ version: info.version, channel: info.channel });
+      },
+      openExternal: async ({ url }) => ({ ok: Utils.openExternal(url) }),
       saveConfig: async (patch) => service.saveConfig(patch),
       login: async () => service.login(),
       loginWithToken: async ({ token }) => service.loginWithToken(token),

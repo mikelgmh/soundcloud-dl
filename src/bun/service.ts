@@ -38,6 +38,7 @@ import { clearSoundCloudSession } from "./login";
 import { runStream, type ProcessController, type RunStreamOpts } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
+  AppInfoPayload,
   ConfigPayload,
   DepsStatus,
   DownloadProgressPayload,
@@ -61,6 +62,10 @@ export type LoginBrowserFn = (
 ) => Promise<LoginResultPayload>;
 
 const DEFAULT_OUTDIR = path.join(os.homedir(), "Music", "SoundCloud");
+
+const APP_NAME = "SoundCloud Downloader";
+const REPO_URL = "https://github.com/mikelgmh/soundcloud-dl";
+const LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
 
 // Formato antiguo por defecto: si quedó guardado en config, se migra.
 const LEGACY_TEMPLATE = "%(uploader)s - %(title)s [%(id)s]";
@@ -129,6 +134,19 @@ export class Service {
       config: this.toConfigPayload(this.config),
       likesCount: this.getLikesCount(),
       likesCachedAt: this.getLikesCachedAt(),
+    };
+  }
+
+  /** Info de la app para la sección "Acerca de". La versión/canal se resuelve
+   *  en el main (Updater.getLocalInfo) y se inyecta desde index.ts. */
+  getAppInfo(opts?: { version?: string; channel?: string }): AppInfoPayload {
+    return {
+      name: APP_NAME,
+      version: opts?.version || "dev",
+      channel: opts?.channel || "dev",
+      repo: REPO_URL,
+      license: "MIT",
+      licenseUrl: LICENSE_URL,
     };
   }
 

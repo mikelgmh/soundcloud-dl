@@ -99,6 +99,15 @@ export interface UpdateResultPayload {
   versions: { ytdlp: DepVersionInfo; ffmpeg: DepVersionInfo };
 }
 
+export interface AppInfoPayload {
+  name: string;
+  version: string;
+  channel: string;
+  repo: string;
+  license: string;
+  licenseUrl: string;
+}
+
 export type AppRPCSchema = {
   // Funciones que ejecuta el proceso main (llamadas desde la UI)
   bun: RPCSchema<{
@@ -112,6 +121,8 @@ export type AppRPCSchema = {
         response: { updateAvailable: boolean; updateReady: boolean; version?: string };
       };
       getConfig: { params: {}; response: ConfigPayload };
+      getAppInfo: { params: {}; response: AppInfoPayload };
+      openExternal: { params: { url: string }; response: { ok: boolean } };
       saveConfig: { params: Partial<ConfigPayload>; response: ConfigPayload };
       login: { params: {}; response: LoginResultPayload };
       loginWithToken: { params: { token: string }; response: { ok: boolean } };
