@@ -23,6 +23,7 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       installDeps: async () => service.installDeps(),
       checkForUpdates: async () => service.checkForUpdates(),
       checkAppUpdate: async () => checkAppUpdate(),
+      applyAppUpdate: async () => applyAppUpdate(),
       getConfig: async () => service.getConfig(),
       getAppInfo: async () => {
         const info = await Updater.getLocalInfo();
@@ -81,7 +82,9 @@ service = new Service(
   },
 );
 
-/** Auto-actualización de la app (solo en builds estables). */
+/** Auto-actualización de la app (solo en builds estables). Solo DETECTA si hay
+ *  una versión nueva; la descarga/aplicación se hace al pulsar "Actualizar"
+ *  (applyAppUpdate). Nunca reinicia sola. */
 async function checkAppUpdate(): Promise<{
   updateAvailable: boolean;
   updateReady: boolean;
@@ -96,28 +99,48 @@ async function checkAppUpdate(): Promise<{
     if (!res.updateAvailable) {
       return { updateAvailable: false, updateReady: false };
     }
+    // Guard anti falso positivo: si la versión del servidor coincide con la
+    // instalada, no hay actualización (el hash puede diferir entre builds del
+    // mismo release, pero la versión ya está instalada).
+    if (res.version && info.version && res.version === info.version) {
+      return { updateAvailable: false, updateReady: false };
+    }
+    return { updateAvailable: true, updateReady: false, version: res.version };
+  } catch {
+    return { updateAvailable: false, updateReady: false };
+  }
+}
+
+/** Descarga y aplica la actualización, reiniciando la app al terminar. */
+async function applyAppUpdate(): Promise<{ ok: boolean }> {
+  try {
     rpc.send.status({
       stage: "update",
-      message: `Nueva versión ${res.version}. Descargando actualización...`,
+      message: `Descargando la nueva versión...`,
     });
     await Updater.downloadUpdate();
     const ready = Updater.updateInfo?.()?.updateReady ?? false;
-    if (ready) {
+    if (!ready) {
       rpc.send.status({
         stage: "update",
-        message: "Actualización lista. La app se reiniciará automáticamente.",
+        message: "No se pudo descargar la actualización. Inténtalo de nuevo.",
       });
-      // Da tiempo a que la UI muestre el aviso antes de reiniciar.
-      await sleep(2500);
-      await Updater.applyUpdate();
+      return { ok: false };
     }
-    return { updateAvailable: true, updateReady: ready, version: res.version };
+    rpc.send.status({
+      stage: "update",
+      message: "Actualización lista. La app se reiniciará automáticamente.",
+    });
+    // Da tiempo a que la UI muestre el aviso antes de reiniciar.
+    await sleep(1500);
+    await Updater.applyUpdate();
+    return { ok: true };
   } catch (err) {
     rpc.send.status({
       stage: "update",
-      message: "No se pudo comprobar si hay actualizaciones.",
+      message: "No se pudo aplicar la actualización.",
     });
-    return { updateAvailable: false, updateReady: false };
+    return { ok: false };
   }
 }
 

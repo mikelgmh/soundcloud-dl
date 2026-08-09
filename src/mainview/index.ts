@@ -236,7 +236,11 @@ function updateStatus(stage: string, message: string): void {
   } else if (stage === "likes" || stage === "login") {
     toast(message, "info");
   } else if (stage === "update") {
-    toast(message, "info", false, 8000);
+    if (updateModalOpen) {
+      setUpdateModalStatus(message);
+    } else {
+      toast(message, "info", false, 8000);
+    }
   } else if (stage === "deps") {
     if (depsModalOpen) {
       setDepsModalStatus(message);
@@ -294,6 +298,56 @@ $<HTMLButtonElement>("deps-close").addEventListener("click", hideDepsModal);
 $<HTMLButtonElement>("deps-retry").addEventListener("click", () =>
   runDepsInstall(),
 );
+
+// ---- Modal de actualización de la app ----
+let updateModalOpen = false;
+
+function showUpdateModal(version?: string): void {
+  updateModalOpen = true;
+  $<HTMLElement>("update-modal").classList.remove("hidden");
+  $<HTMLElement>("update-version").textContent = version ? `v${version}` : "";
+  $<HTMLElement>("update-status").textContent = "";
+  $<HTMLElement>("update-spinner").classList.add("hidden");
+  $<HTMLElement>("update-icon").classList.remove("hidden");
+  const btn = $<HTMLButtonElement>("btn-apply-update");
+  btn.disabled = false;
+  btn.textContent = "Actualizar";
+}
+
+function setUpdateModalStatus(msg: string): void {
+  $<HTMLElement>("update-status").textContent = msg;
+  $<HTMLElement>("update-spinner").classList.remove("hidden");
+  $<HTMLElement>("update-icon").classList.add("hidden");
+  $<HTMLButtonElement>("btn-apply-update").disabled = true;
+}
+
+$<HTMLButtonElement>("btn-apply-update").addEventListener("click", async () => {
+  if (!isApp) return;
+  setUpdateModalStatus("Descargando...");
+  const r = await api.request.applyAppUpdate({});
+  if (!r.ok) {
+    $<HTMLElement>("update-spinner").classList.add("hidden");
+    $<HTMLElement>("update-icon").classList.remove("hidden");
+    const btn = $<HTMLButtonElement>("btn-apply-update");
+    btn.disabled = false;
+    btn.textContent = "Reintentar";
+  }
+});
+
+// Comprobación manual desde la pantalla "Acerca de".
+$<HTMLButtonElement>("btn-check-update").addEventListener("click", async () => {
+  if (!isApp) return;
+  try {
+    const r = await api.request.checkAppUpdate({});
+    if (r.updateAvailable) {
+      showUpdateModal(r.version);
+    } else {
+      toast("Ya tienes la última versión", "success");
+    }
+  } catch {
+    toast("No se pudo comprobar si hay actualizaciones", "warn");
+  }
+});
 
 function updateProgress(p: DownloadProgressPayload): void {
   trackCurrent = p.current || 0;
@@ -612,7 +666,7 @@ $<HTMLButtonElement>("queue-next").addEventListener("click", () => {
 });
 
 // ---- Navegación ----
-const views = ["status", "download", "search", "collection", "settings", "developer"];
+const views = ["status", "download", "search", "collection", "settings", "developer", "about"];
 
 function showView(name: string): void {
   for (const v of views) {
@@ -1765,7 +1819,10 @@ initAbout();
 async function checkAppUpdateBackground(): Promise<void> {
   if (!isApp) return;
   try {
-    await api.request.checkAppUpdate({});
+    const r = await api.request.checkAppUpdate({});
+    if (r.updateAvailable) {
+      showUpdateModal(r.version);
+    }
   } catch {
     // Sin red: se ignora.
   }

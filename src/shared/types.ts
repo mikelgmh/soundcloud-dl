@@ -120,6 +120,7 @@ export type AppRPCSchema = {
         params: {};
         response: { updateAvailable: boolean; updateReady: boolean; version?: string };
       };
+      applyAppUpdate: { params: {}; response: { ok: boolean } };
       getConfig: { params: {}; response: ConfigPayload };
       getAppInfo: { params: {}; response: AppInfoPayload };
       openExternal: { params: { url: string }; response: { ok: boolean } };
