@@ -496,8 +496,7 @@ export class Service {
   async getPlaylistTracks(url: string): Promise<{
     tracks: LikedTrack[];
     tokenInvalid: boolean;
-  }> {
-    const config = this.requireDownloadConfig();
+  }> {    const config = this.requireDownloadConfig();
     const deps = await this.ensureDepsReady();
     const { entries, tokenInvalid } = await fetchFlatEntries(url, {
       ytdlp: deps.ytdlp,
@@ -506,6 +505,22 @@ export class Service {
       username: config.username!,
     }, 'full');
     return { tracks: entries, tokenInvalid };
+  }
+
+  /** Busca canciones en todo SoundCloud. */
+  async searchSoundcloud(query: string): Promise<{ tracks: LikedTrack[] }> {
+    const q = query.trim();
+    if (!q) throw new Error("Escribe un término de búsqueda.");
+    const config = this.requireDownloadConfig();
+    const deps = await this.ensureDepsReady();
+    this.emitter.status("likes", `Buscando "${q}" en SoundCloud...`);
+    const { entries } = await fetchFlatEntries(`scsearch20:${q}`, {
+      ytdlp: deps.ytdlp,
+      ffmpegDir: deps.ffmpegDir,
+      cookiesFile: writeCookiesFile(config.oauthToken!),
+      username: config.username!,
+    });
+    return { tracks: entries };
   }
 
   /** Descarga una lista de URLs (p.ej. una playlist entera). */

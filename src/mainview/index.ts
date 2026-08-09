@@ -1008,50 +1008,37 @@ function renderSearchEmpty(title: string, detail: string): void {
 async function doSearch(): Promise<void> {
   if (!guard()) return;
   const input = $<HTMLInputElement>("search-input");
-  const query = input.value.trim().toLowerCase();
+  const query = input.value.trim();
   const results = $<HTMLElement>("search-results");
 
   if (!query) {
-    renderSearchEmpty("Escribe algo para buscar", "Se buscará solo en tu lista de favoritos.");
-    return;
-  }
-
-  results.textContent = "";
-  const searching = document.createElement("p");
-  searching.className = "text-sm text-ink-400 flex items-center gap-2";
-  searching.innerHTML = '<span class="spinner spinner-accent"></span> Buscando...';
-  results.appendChild(searching);
-
-  let cache = await api.request.getLikesCache({});
-  if (cache.tracks.length === 0) {
-    toast("Refrescando la lista de favoritos...");
-    await api.request.refreshLikes({});
-    cache = await api.request.getLikesCache({});
-  }
-
-  const matches = cache.tracks.filter(
-    (t: LikedTrackPayload) =>
-      t.title.toLowerCase().includes(query) ||
-      (t.uploader ?? "").toLowerCase().includes(query),
-  );
-  results.textContent = "";
-
-  if (matches.length === 0) {
     renderSearchEmpty(
-      `Sin resultados para "${input.value.trim()}"`,
-      "Prueba con otro término o refresca la lista de favoritos.",
+      "Escribe algo para buscar",
+      "Se buscará en todo SoundCloud.",
     );
     return;
   }
 
-  const shown = matches.slice(0, 30);
-  if (matches.length > shown.length) {
-    const more = document.createElement("p");
-    more.className = "text-xs text-ink-500 mb-1";
-    more.textContent = `${matches.length} coincidencias; mostrando las primeras ${shown.length}.`;
-    results.appendChild(more);
+  results.textContent = "";
+  results.appendChild(
+    loadingState(`Buscando "${query}" en SoundCloud...`),
+  );
+
+  try {
+    const res = await api.request.searchSoundcloud({ query });
+    results.textContent = "";
+    if (!res.tracks.length) {
+      renderSearchEmpty(
+        `Sin resultados para "${query}"`,
+        "Prueba con otro término.",
+      );
+      return;
+    }
+    for (const t of res.tracks) results.appendChild(trackCard(t));
+  } catch (err) {
+    results.textContent = "";
+    renderSearchEmpty("No se pudo buscar", (err as Error).message);
   }
-  for (const t of shown) results.appendChild(trackCard(t));
 }
 
 function trackCard(t: LikedTrackPayload): HTMLElement {
@@ -1117,14 +1104,6 @@ $<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
 $<HTMLInputElement>("url-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $<HTMLButtonElement>("btn-download-url").click();
 });
-$<HTMLButtonElement>("btn-search-refresh").addEventListener("click", () =>
-  withBusy("btn-search-refresh", async () => {
-    if (!guard()) return;
-    await api.request.refreshLikes({});
-    toast("Lista de favoritos actualizada", "success");
-    if ($<HTMLInputElement>("search-input").value.trim()) await doSearch();
-  }),
-);
 
 // ---- Editor de plantilla de nombre (chips) ----
 const VAR_TITLES: Record<string, string> = {
@@ -1410,9 +1389,20 @@ $<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
 const collectionState = {
   source: "favorites" as "favorites" | "playlists",
   playlistUrl: null as string | null,
+  query: "",
   playlistsCache: null as { id: string; title: string; url: string }[] | null,
   playlistTracksCache: null as { url: string; tracks: LikedTrackPayload[] } | null,
 };
+
+function filterByQuery(tracks: LikedTrackPayload[]): LikedTrackPayload[] {
+  const q = collectionState.query.trim().toLowerCase();
+  if (!q) return tracks;
+  return tracks.filter(
+    (t) =>
+      t.title.toLowerCase().includes(q) ||
+      (t.uploader ?? "").toLowerCase().includes(q),
+  );
+}
 
 function setSourceTab(active: "favorites" | "playlists"): void {
   for (const name of ["favorites", "playlists"] as const) {
@@ -1429,6 +1419,17 @@ async function renderCollection(): Promise<void> {
   const content = $<HTMLElement>("collection-content");
   content.textContent = "";
 
+  // El buscador solo aplica a listas de canciones.
+  const showSearch =
+    collectionState.source === "favorites" || !!collectionState.playlistUrl;
+  $<HTMLElement>("collection-search-wrap").classList.toggle(
+    "hidden",
+    !showSearch,
+  );
+  if (showSearch) {
+    $<HTMLInputElement>("collection-search").value = collectionState.query;
+  }
+
   if (collectionState.source === "favorites") {
     await renderCollectionFavorites();
   } else if (collectionState.playlistUrl) {
@@ -1437,6 +1438,11 @@ async function renderCollection(): Promise<void> {
     await renderCollectionPlaylists();
   }
 }
+
+$<HTMLInputElement>("collection-search").addEventListener("input", () => {
+  collectionState.query = $<HTMLInputElement>("collection-search").value;
+  renderCollection();
+});
 
 function collectionTrackRow(t: LikedTrackPayload): HTMLElement {
   const row = document.createElement("div");
@@ -1487,8 +1493,16 @@ async function renderCollectionFavorites(): Promise<void> {
     tracks = [];
   }
 
-  if (!tracks.length) {
-    content.appendChild(emptyState("No hay favoritos todavía", "Refresca la lista desde Inicio si crees que falta algo."));
+  const filtered = filterByQuery(tracks);
+  if (!filtered.length) {
+    content.appendChild(
+      emptyState(
+        "Sin resultados",
+        collectionState.query
+          ? `No hay favoritos que coincidan con "${collectionState.query}".`
+          : "No hay favoritos todavía.",
+      ),
+    );
     return;
   }
 
@@ -1496,7 +1510,9 @@ async function renderCollectionFavorites(): Promise<void> {
   header.className = "flex items-center justify-between gap-3 flex-wrap";
   const h = document.createElement("p");
   h.className = "text-sm text-ink-300";
-  h.textContent = `${tracks.length} canciones`;
+  h.textContent = collectionState.query
+    ? `${filtered.length} de ${tracks.length} canciones`
+    : `${tracks.length} canciones`;
   const dl = document.createElement("button");
   dl.className =
     "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
@@ -1516,7 +1532,7 @@ async function renderCollectionFavorites(): Promise<void> {
 
   const list = document.createElement("div");
   list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
-  for (const t of tracks) list.appendChild(collectionTrackRow(t));
+  for (const t of filtered) list.appendChild(collectionTrackRow(t));
 
   content.appendChild(header);
   content.appendChild(list);
@@ -1591,6 +1607,7 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
   }
 
   const tracks = collectionState.playlistTracksCache!.tracks;
+  const filtered = filterByQuery(tracks);
 
   const top = document.createElement("div");
   top.className = "flex items-center justify-between gap-3 flex-wrap";
@@ -1602,11 +1619,14 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
   back.textContent = "‹ Atrás";
   back.addEventListener("click", () => {
     collectionState.playlistUrl = null;
+    collectionState.query = "";
     renderCollection();
   });
   const count = document.createElement("p");
   count.className = "text-sm text-ink-300";
-  count.textContent = `${tracks.length} canciones`;
+  count.textContent = collectionState.query
+    ? `${filtered.length} de ${tracks.length} canciones`
+    : `${tracks.length} canciones`;
   left.appendChild(back);
   left.appendChild(count);
 
@@ -1631,13 +1651,20 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
 
   content.appendChild(top);
 
-  if (!tracks.length) {
-    content.appendChild(emptyState("La playlist está vacía", ""));
+  if (!filtered.length) {
+    content.appendChild(
+      emptyState(
+        "Sin resultados",
+        collectionState.query
+          ? `No hay canciones que coincidan con "${collectionState.query}".`
+          : "La playlist está vacía.",
+      ),
+    );
     return;
   }
   const list = document.createElement("div");
   list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
-  for (const t of tracks) list.appendChild(collectionTrackRow(t));
+  for (const t of filtered) list.appendChild(collectionTrackRow(t));
   content.appendChild(list);
 }
 
@@ -1667,10 +1694,14 @@ function loadingState(text: string): HTMLElement {
 
 $<HTMLButtonElement>("src-favorites").addEventListener("click", () => {
   collectionState.source = "favorites";
+  collectionState.playlistUrl = null;
+  collectionState.query = "";
   renderCollection();
 });
 $<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
   collectionState.source = "playlists";
+  collectionState.playlistUrl = null;
+  collectionState.query = "";
   renderCollection();
 });
 

@@ -137,6 +137,10 @@ export type AppRPCSchema = {
         params: { url: string };
         response: { tracks: LikedTrackPayload[]; tokenInvalid: boolean };
       };
+      searchSoundcloud: {
+        params: { query: string };
+        response: { tracks: LikedTrackPayload[] };
+      };
       downloadUrls: {
         params: { urls: string[] };
         response: { ok: boolean; code: number };

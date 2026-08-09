@@ -461,7 +461,7 @@
             <input
               id="search-input"
               type="text"
-              placeholder="Ej.: olivia, house, remix..."
+              placeholder="Buscar en todo SoundCloud..."
               class="flex-1 px-4 py-2.5 rounded-lg bg-ink-900 border border-ink-700 text-ink-100 placeholder:text-ink-500 focus:border-brand-500 focus:outline-none transition-colors"
             />
             <button
@@ -469,13 +469,6 @@
               class="px-5 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white transition-all"
             >
               Buscar
-            </button>
-            <button
-              id="btn-search-refresh"
-              class="px-4 py-2.5 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 hover:text-white transition-colors"
-              title="Actualizar la lista de favoritos"
-            >
-              Refrescar
             </button>
           </div>
 
@@ -526,6 +519,15 @@
             >
               Playlists
             </button>
+          </div>
+
+          <div id="collection-search-wrap" class="hidden">
+            <input
+              id="collection-search"
+              type="text"
+              placeholder="Buscar en esta lista..."
+              class="w-full px-4 py-2.5 rounded-lg bg-ink-900 border border-ink-700 text-ink-100 placeholder:text-ink-500 focus:border-brand-500 focus:outline-none transition-colors"
+            />
           </div>
 
           <div id="collection-content"></div>

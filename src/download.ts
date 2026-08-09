@@ -107,17 +107,14 @@ export async function fetchFlatEntries(
       try {
         const j = JSON.parse(line);
         if (j && (j.url || j.webpage_url)) {
-          // En modo completo la URL es el stream; la página es webpage_url.
-          const pageUrl = mode === 'full'
-            ? (j.webpage_url ?? j.url)
-            : (j.url ?? j.webpage_url);
+          // Preferimos la página (webpage_url) a la URL del stream/API.
+          const pageUrl = j.webpage_url ?? j.url;
           const m = String(pageUrl).match(/soundcloud\.com\/([^/]+)\//);
           entries.push({
             id: String(j.id ?? i),
             title: j.title ?? `Elemento ${i}`,
             url: pageUrl,
-            uploader:
-              mode === 'full' ? (j.uploader ?? m?.[1]) : (m?.[1]),
+            uploader: j.uploader ?? m?.[1],
             index: i,
           });
         }
