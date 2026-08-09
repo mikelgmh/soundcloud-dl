@@ -1,6 +1,6 @@
 {
   "name": "soundcloud-downloader",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "description": "CLI para iniciar sesión en SoundCloud y descargar tus favoritos como MP3 320k usando yt-dlp",
   "bin": {
