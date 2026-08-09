@@ -139,7 +139,7 @@ export function parseEntriesOutput(
 }
 
 export function buildDownloadArgs(opts: DownloadOptions): string[] {
-  const format = opts.format ?? 'mp3';
+  const format = opts.format ?? 'm4a';
   const bitrate = opts.bitrate ?? opts.quality ?? '320K';
   const lossless = LOSSLESS_FORMATS.includes(format);
   const template = opts.filenameTemplate ?? DEFAULT_FILENAME_TEMPLATE;

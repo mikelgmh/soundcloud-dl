@@ -634,11 +634,11 @@
                   id="set-format"
                   class="mt-1.5 w-full px-4 py-2.5 rounded-lg bg-ink-950 border border-ink-700 text-ink-100 focus:border-brand-500 focus:outline-none transition-colors"
                 >
-                  <option value="mp3" data-i18n="fmt.mp3">MP3</option>
                   <option value="m4a" data-i18n="fmt.m4a">M4A (AAC)</option>
+                  <option value="mp3" data-i18n="fmt.mp3">MP3</option>
                   <option value="opus" data-i18n="fmt.opus">Opus</option>
-                  <option value="flac" data-i18n="fmt.flac">FLAC (sin pérdida)</option>
-                  <option value="wav" data-i18n="fmt.wav">WAV (sin pérdida)</option>
+                  <option value="flac" data-i18n="fmt.flac">FLAC</option>
+                  <option value="wav" data-i18n="fmt.wav">WAV</option>
                   <option value="vorbis" data-i18n="fmt.vorbis">OGG (Vorbis)</option>
                   <option value="original" data-i18n="fmt.original">Original (sin convertir)</option>
                 </select>
@@ -693,9 +693,14 @@
             </div>
 
             <p class="text-xs text-ink-500 leading-relaxed" data-i18n="settings.qualityNote">
-              La calidad máxima disponible depende de tu cuenta (Go+ con
-              reproducción en alta calidad) y de lo que el artista permita
-              descargar.
+              La máxima calidad de descarga es AAC 256 kbps (con Go+ / Next
+              Pro). El ajuste "High quality streaming" de SoundCloud no afecta
+              a las descargas.
+            </p>
+            <p class="text-xs text-ink-500 leading-relaxed" data-i18n="settings.losslessNote">
+              FLAC, WAV y MP3 se generan reconvirtiendo el stream de SoundCloud:
+              no son audio sin pérdida real. Para la máxima calidad usa M4A u
+              Original.
             </p>
 
             <div class="border-t border-ink-800 pt-4 flex items-center gap-2 flex-wrap">

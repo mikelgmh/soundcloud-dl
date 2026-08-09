@@ -1405,7 +1405,7 @@ $<HTMLElement>("template-editor").addEventListener("keydown", (e) => {
 
 function seedSettings(c: ConfigPayload): void {
   $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
-  $<HTMLSelectElement>("set-format").value = c.format ?? "mp3";
+  $<HTMLSelectElement>("set-format").value = c.format ?? "m4a";
   $<HTMLSelectElement>("set-bitrate").value = c.bitrate ?? c.quality ?? "320K";
   $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
   if (!langUserSet) {

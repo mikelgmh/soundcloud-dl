@@ -298,7 +298,7 @@ export class Service {
       ...c,
       outdir: c.outdir || DEFAULT_OUTDIR,
       quality: c.quality ?? '320K',
-      format: c.format ?? 'mp3',
+      format: c.format ?? 'm4a',
       bitrate: c.bitrate ?? c.quality ?? '320K',
       filenameTemplate: this.getFilenameTemplate(c),
       theme: c.theme ?? 'dark',
@@ -764,7 +764,7 @@ export class Service {
       ytdlp: "",
       ffmpegDir: null as string | null,
       outDir,
-      format: config.format ?? "mp3",
+      format: config.format ?? "m4a",
       bitrate: config.bitrate ?? config.quality ?? "320K",
       filenameTemplate: this.getFilenameTemplate(config),
       skipExisting: config.skipExisting ?? true,
@@ -826,7 +826,7 @@ export class Service {
       appendHistory({
         ts: Date.now(),
         target,
-        format: this.config.format ?? "mp3",
+        format: this.config.format ?? "m4a",
         ok: code === 0,
       });
       if (code === 0) {

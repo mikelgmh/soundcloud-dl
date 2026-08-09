@@ -119,7 +119,7 @@ describe("Service: configuración", () => {
   it("getStatus devuelve el estado con valores por defecto", async () => {
     const s = makeService();
     const st = await s.getStatus();
-    expect(st.config.format).toBe("mp3");
+    expect(st.config.format).toBe("m4a");
     expect(st.config.bitrate).toBe("320K");
     expect(st.config.theme).toBe("dark");
     expect(st.config.skipExisting).toBe(true);
@@ -284,7 +284,7 @@ describe("Service: descargas", () => {
     const r = await p;
     expect(r.ok).toBe(true);
     const items = s.getHistory().items;
-    expect(items[0]).toMatchObject({ target: "favoritos", ok: true, format: "mp3" });
+    expect(items[0]).toMatchObject({ target: "favoritos", ok: true, format: "m4a" });
   });
 
   it("muestra notificación al completar", async () => {

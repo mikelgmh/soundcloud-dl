@@ -15,10 +15,10 @@ function argsOf(o: Partial<DownloadOptions> = {}): string[] {
 }
 
 describe("buildDownloadArgs", () => {
-  it("usa mp3 320K por defecto y el enlace de favoritos", () => {
+  it("usa m4a 320K por defecto y el enlace de favoritos", () => {
     const a = argsOf();
     expect(a).toEqual(expect.arrayContaining(["-f", "bestaudio/best"]));
-    expect(a).toEqual(expect.arrayContaining(["-x", "--audio-format", "mp3"]));
+    expect(a).toEqual(expect.arrayContaining(["-x", "--audio-format", "m4a"]));
     expect(a).toEqual(expect.arrayContaining(["--audio-quality", "320K"]));
     expect(a).toEqual(expect.arrayContaining(["--no-overwrites"]));
     expect(a[a.length - 1]).toBe("https://soundcloud.com/usuario/likes");
