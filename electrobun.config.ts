@@ -4,7 +4,7 @@ export default {
   app: {
     name: "SoundCloud Downloader",
     identifier: "dev.soundcloud.downloader",
-    version: "0.5.0",
+    version: "0.5.1",
   },
   runtime: {
     exitOnLastWindowClosed: true,
