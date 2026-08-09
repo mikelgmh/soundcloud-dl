@@ -517,8 +517,11 @@ export class Service {
   async checkStreamingQuality(): Promise<{
     checked: boolean;
     highQuality: boolean;
+    error?: string;
   }> {
-    if (!this.config.oauthToken) return { checked: false, highQuality: false };
+    if (!this.config.oauthToken) {
+      return { checked: false, highQuality: false, error: "sin sesión" };
+    }
     const track = this.getLikesCache().tracks[0];
     try {
       const highQuality = await checkHighQualityStreaming({
@@ -527,8 +530,10 @@ export class Service {
         trackUrl: track?.url,
       });
       return { checked: true, highQuality };
-    } catch {
-      return { checked: false, highQuality: false };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.emitter.log("warn", this.msg("quality.checkLog", { error: message }));
+      return { checked: false, highQuality: false, error: message };
     }
   }
 

@@ -142,7 +142,7 @@ export type AppRPCSchema = {
       getDownloadedIds: { params: {}; response: { ids: string[] } };
       checkStreamingQuality: {
         params: {};
-        response: { checked: boolean; highQuality: boolean };
+        response: { checked: boolean; highQuality: boolean; error?: string };
       };
       downloadUrl: { params: { url: string }; response: { ok: boolean; code: number } };
       exportConfig: { params: {}; response: { json: string } };

@@ -263,9 +263,11 @@ $<HTMLButtonElement>("quality-open-settings").addEventListener("click", () => {
 async function renderStreamingQualityStatus(): Promise<void> {
   const dot = $<HTMLElement>("quality-status-dot");
   const text = $<HTMLElement>("quality-status-text");
+  const hint = $<HTMLElement>("quality-status-hint");
   if (!isApp) {
     dot.className = "w-2 h-2 rounded-full bg-ink-600";
     text.textContent = T("quality.unknown");
+    hint.textContent = T("quality.statusHint");
     return;
   }
   try {
@@ -273,16 +275,20 @@ async function renderStreamingQualityStatus(): Promise<void> {
     if (!r.checked) {
       dot.className = "w-2 h-2 rounded-full bg-ink-600";
       text.textContent = T("quality.unknown");
+      hint.textContent = r.error ?? "";
     } else if (r.highQuality) {
       dot.className = "w-2 h-2 rounded-full bg-emerald-400";
       text.textContent = T("quality.high");
+      hint.textContent = T("quality.statusHint");
     } else {
       dot.className = "w-2 h-2 rounded-full bg-amber-400";
       text.textContent = T("quality.standard");
+      hint.textContent = T("quality.statusHint");
     }
   } catch {
     dot.className = "w-2 h-2 rounded-full bg-ink-600";
     text.textContent = T("quality.unknown");
+    hint.textContent = "";
   }
 }
 
