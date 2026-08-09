@@ -2,6 +2,26 @@
 
 App de escritorio (ElectroBun) para descargar música de SoundCloud en alta calidad usando **yt-dlp** y **ffmpeg**. Descarga tus favoritos ("me gusta"), playlists y canciones sueltas en MP3 320 kbps y otros formatos, con sesión de SoundCloud integrada (sin exponer tus credenciales a la app).
 
+[![Build & Publish](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release-build.yml/badge.svg)](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release-build.yml)
+[![Release](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release.yml/badge.svg)](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release.yml)
+[![Versión](https://img.shields.io/github/v/release/mikelgmh/soundcloud-dl)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
+[![Fecha del release](https://img.shields.io/github/release-date/mikelgmh/soundcloud-dl)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
+[![Plataformas](https://img.shields.io/badge/plataformas-macOS%20%7C%20Windows%20%7C%20Linux-4a90d9)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
+[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun)](https://bun.sh)
+
+> Nota: el proyecto no tiene suite de tests, así que no hay badge de coverage.
+
+## Descargar
+
+Descarga el instalador para tu sistema operativo (última versión):
+
+[![Descargar macOS (Apple Silicon)](https://img.shields.io/badge/Descargar%20macOS%20(Apple%20Silicon)-007AFF?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/mikelgmh/soundcloud-dl/releases/latest/download/stable-macos-arm64-SoundCloudDownloader.dmg)
+[![Descargar Windows](https://img.shields.io/badge/Descargar%20Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/mikelgmh/soundcloud-dl/releases/latest/download/stable-win-x64-SoundCloudDownloader-Setup.zip)
+[![Descargar Linux](https://img.shields.io/badge/Descargar%20Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/mikelgmh/soundcloud-dl/releases/latest/download/stable-linux-x64-SoundCloudDownloader-Setup.tar.gz)
+
+- **macOS Intel (x64)**: no se publica porque GitHub Actions ya no ofrece runners Intel. Compílalo localmente con `bun run build:mac:intel` en un Mac Intel (ver más abajo).
+- Instaladores alternativos (`.tar.zst`, updates) y todas las versiones en [GitHub Releases](https://github.com/mikelgmh/soundcloud-dl/releases).
+
 ## Funcionalidades
 
 - **Descarga de favoritos, playlists y búsqueda global** de SoundCloud desde la propia app.
