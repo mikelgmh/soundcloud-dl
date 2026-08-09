@@ -702,7 +702,30 @@ function updateQueueRowStatus(item: QueueItem): void {
       `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
   } else if (item.status === "done") {
     status.className += " text-emerald-400";
-    status.textContent = "✓";
+    status.innerHTML = "";
+    const tick = document.createElement("span");
+    tick.textContent = "✓";
+    const folderBtn = document.createElement("button");
+    folderBtn.type = "button";
+    folderBtn.className =
+      "inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-300 hover:text-white hover:bg-ink-800 transition-colors";
+    folderBtn.title = T("queue.openFolder");
+    folderBtn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>';
+    folderBtn.addEventListener("click", async () => {
+      if (!isApp) return;
+      try {
+        const r = await api.request.showDownloadedItem({
+          id: item.id,
+          title: item.title,
+        });
+        if (!r.ok) toast(T("queue.fileNotFound"), "warn");
+      } catch {
+        toast(T("queue.fileNotFound"), "warn");
+      }
+    });
+    status.appendChild(tick);
+    status.appendChild(folderBtn);
   } else {
     status.className += " text-red-400";
     status.textContent = T("dl.error");

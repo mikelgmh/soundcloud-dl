@@ -254,3 +254,18 @@ export function scanAudioStems(outDir: string): Set<string> {
   walk(outDir);
   return stems;
 }
+
+/** Busca el fichero real de una pista según la plantilla; devuelve la ruta
+ *  completa o null si no existe. */
+export function findTrackFile(
+  outDir: string,
+  template: string,
+  track: { id: string; title: string; uploader?: string; index?: number },
+): string | null {
+  const base = renderFilenameTemplate(template, track);
+  for (const ext of COMMON_AUDIO_EXTS) {
+    const p = path.join(outDir, `${base}.${ext}`);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}

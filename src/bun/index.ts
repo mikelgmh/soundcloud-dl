@@ -56,6 +56,8 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       downloadAll: async () => service.downloadAll(),
       downloadMissing: async () => service.downloadMissing(),
       downloadTrack: async ({ url }) => service.downloadTrack(url),
+      showDownloadedItem: async ({ id, title }) =>
+        service.showDownloadedItem({ id, title }),
       cancelDownload: async () => service.cancelDownload(),
       pauseDownload: async () => service.pauseDownload(),
       resumeDownload: async () => service.resumeDownload(),

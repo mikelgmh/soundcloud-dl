@@ -19,6 +19,7 @@ import {
   downloadLikesStream,
   fetchFlatEntries,
   fetchLikes,
+  findTrackFile,
   renderFilenameTemplate,
   scanAudioStems,
 } from "../download";
@@ -490,6 +491,23 @@ export class Service {
       throw new Error(this.msg("dl.badUrl"));
     }
     return this.downloadTrack(trimmed);
+  }
+
+  /** Abre en el explorador la carpeta con el fichero de la canción
+   *  seleccionado (para la cola de descargas). */
+  showDownloadedItem(params: { id: string; title: string }): { ok: boolean } {
+    const config = this.requireDownloadConfig();
+    const outDir = config.outdir || DEFAULT_OUTDIR;
+    const cached = this.getLikesCache().tracks.find((t) => t.id === params.id);
+    const track = cached ?? { id: params.id, title: params.title, url: "", index: 0 };
+    const file = findTrackFile(outDir, this.getFilenameTemplate(config), track);
+    if (!file) return { ok: false };
+    try {
+      Utils.showItemInFolder(file);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
   }
 
   /** Configuración exportable (sin el token de sesión). */
