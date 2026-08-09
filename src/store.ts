@@ -13,10 +13,14 @@ const isAppBundle = (() => {
   }
 })();
 
-export const DATA_ROOT = isAppBundle
-  ? process.env.SOUNDCLOUD_DOWNLOADER_DIR ||
-    path.join(os.homedir(), 'Library', 'Application Support', 'SoundCloudDownloader')
-  : path.resolve(import.meta.dir, '..');
+// La variable de entorno SOUNDCLOUD_DOWNLOADER_DIR permite reubicar el
+// directorio de datos en cualquier entorno (también en desarrollo, útil para
+// tests y para portar la app).
+export const DATA_ROOT = process.env.SOUNDCLOUD_DOWNLOADER_DIR
+  ? process.env.SOUNDCLOUD_DOWNLOADER_DIR
+  : isAppBundle
+    ? path.join(os.homedir(), 'Library', 'Application Support', 'SoundCloudDownloader')
+    : path.resolve(import.meta.dir, '..');
 
 export const SND_DIR = isAppBundle ? DATA_ROOT : path.join(DATA_ROOT, '.snd');
 export const BIN_DIR = isAppBundle

@@ -10,3 +10,6 @@ src/mainview/index.css
 .agents/
 .vscode/
 skills-lock.json
+
+# cobertura de tests
+coverage/

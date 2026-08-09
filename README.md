@@ -4,12 +4,16 @@ Desktop app (ElectroBun) to download music from SoundCloud in high quality using
 
 [![Build & Publish](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release-build.yml/badge.svg)](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release-build.yml)
 [![Release](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release.yml/badge.svg)](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/release.yml)
+[![Tests](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/tests.yml/badge.svg)](https://github.com/mikelgmh/soundcloud-dl/actions/workflows/tests.yml)
+[![Coverage](https://codecov.io/gh/mikelgmh/soundcloud-dl/branch/main/graph/badge.svg)](https://codecov.io/gh/mikelgmh/soundcloud-dl)
 [![Version](https://img.shields.io/github/v/release/mikelgmh/soundcloud-dl)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
 [![Release date](https://img.shields.io/github/release-date/mikelgmh/soundcloud-dl)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-4a90d9)](https://github.com/mikelgmh/soundcloud-dl/releases/latest)
 [![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun)](https://bun.sh)
 
-> Note: the project has no test suite, so there is no coverage badge.
+> Coverage is measured in GitHub Actions (`bun test --coverage`) and uploaded to
+> [Codecov](https://codecov.io/gh/mikelgmh/soundcloud-dl). If the badge does not
+> show, check that the Codecov integration is enabled for the repository.
 
 ## Download
 

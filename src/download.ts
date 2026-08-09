@@ -99,6 +99,15 @@ export async function fetchFlatEntries(
     throw new Error(`yt-dlp no pudo obtener la lista:\n${tail}`);
   }
 
+  const { entries, tokenInvalid } = parseEntriesOutput(stdout, stderr);
+  return { entries, tokenInvalid };
+}
+
+/** Parsea la salida JSON de yt-dlp (--dump-json) en entradas planas. */
+export function parseEntriesOutput(
+  stdout: string,
+  stderr: string,
+): { entries: LikedTrack[]; tokenInvalid: boolean } {
   const entries: LikedTrack[] = [];
   stdout
     .split('\n')

@@ -35,7 +35,7 @@ import {
   type LikedTrack,
 } from "../store";
 import { clearSoundCloudSession } from "./login";
-import { runStream, type ProcessController } from "../util";
+import { runStream, type ProcessController, type RunStreamOpts } from "../util";
 import { Utils } from "electrobun/bun";
 import type {
   ConfigPayload,
@@ -113,6 +113,8 @@ export class Service {
     private emitter: Emitter,
     private loginBrowser: LoginBrowserFn,
     private folderPicker: () => Promise<string | null>,
+    /** Inyectable para tests; por defecto usa runStream real. */
+    private runStreamFn: (cmd: string[], opts?: RunStreamOpts) => Promise<number> = runStream,
   ) {}
 
   // ---- Estado ----
@@ -602,7 +604,7 @@ export class Service {
       this.abort = new AbortController();
       this.controller = { pause() {}, resume() {} };
       const tracker = new DownloadTracker((p) => this.emitter.progress(p));
-      const code = await runStream(args, {
+      const code = await this.runStreamFn(args, {
         onStdout: (line) => {
           if (!/^\[download\]\s+\d+(?:\.\d+)?%/.test(line)) {
             this.emitter.log("info", line);

@@ -1,0 +1,11 @@
+[test]
+# Los ficheros de UI, entrada y login con webview requieren el runtime de la
+# app (ElectroBun/Playwright) y no son prácticos de cubrir en tests unitarios.
+coveragePathIgnorePatterns = [
+  "**/login.ts",
+  "**/index.ts",
+  "**/cli.ts",
+  "**/auth.ts",
+  "**/mainview/**",
+  "**/connecting/**",
+]

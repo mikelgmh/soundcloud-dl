@@ -10,6 +10,8 @@
     "start": "electrobun dev",
     "dev": "electrobun dev --watch",
     "cli": "bun run index.ts",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=lcov",
     "build:css": "bunx @tailwindcss/cli -i src/mainview/input.css -o src/mainview/index.css",
     "build:desktop": "electrobun build",
     "build:stable": "electrobun build --env=stable",
