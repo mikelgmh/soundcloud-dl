@@ -734,6 +734,25 @@
             </div>
           </div>
 
+          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-6">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span id="quality-status-dot" class="w-2 h-2 rounded-full bg-ink-600"></span>
+                <p id="quality-status-text" class="text-sm text-ink-200">—</p>
+              </div>
+              <button
+                id="btn-quality-check"
+                class="px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
+                data-i18n="quality.check"
+              >
+                Comprobar
+              </button>
+            </div>
+            <p class="text-xs text-ink-500 mt-2 leading-relaxed" data-i18n="quality.statusHint">
+              Calidad de descarga disponible para tu cuenta de SoundCloud.
+            </p>
+          </div>
+
         </section>
 
         <!-- Vista: Acerca de -->

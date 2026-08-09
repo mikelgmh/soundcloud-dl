@@ -259,6 +259,37 @@ $<HTMLButtonElement>("quality-open-settings").addEventListener("click", () => {
     .catch(() => {});
 });
 
+/** Muestra en Ajustes la calidad de descarga disponible de la cuenta. */
+async function renderStreamingQualityStatus(): Promise<void> {
+  const dot = $<HTMLElement>("quality-status-dot");
+  const text = $<HTMLElement>("quality-status-text");
+  if (!isApp) {
+    dot.className = "w-2 h-2 rounded-full bg-ink-600";
+    text.textContent = T("quality.unknown");
+    return;
+  }
+  try {
+    const r = await api.request.checkStreamingQuality({});
+    if (!r.checked) {
+      dot.className = "w-2 h-2 rounded-full bg-ink-600";
+      text.textContent = T("quality.unknown");
+    } else if (r.highQuality) {
+      dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+      text.textContent = T("quality.high");
+    } else {
+      dot.className = "w-2 h-2 rounded-full bg-amber-400";
+      text.textContent = T("quality.standard");
+    }
+  } catch {
+    dot.className = "w-2 h-2 rounded-full bg-ink-600";
+    text.textContent = T("quality.unknown");
+  }
+}
+
+$<HTMLButtonElement>("btn-quality-check").addEventListener("click", () =>
+  withBusy("btn-quality-check", renderStreamingQualityStatus),
+);
+
 // ---- Toasts ----
 function toast(
   message: string,
@@ -844,6 +875,9 @@ function showView(name: string): void {
   }
   if (name === "collection") {
     renderCollection();
+  }
+  if (name === "settings") {
+    renderStreamingQualityStatus();
   }
 }
 
