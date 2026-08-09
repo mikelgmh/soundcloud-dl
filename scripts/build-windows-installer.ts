@@ -34,10 +34,11 @@ async function main() {
   const buildFolder = join(ROOT, "build", platformPrefix);
   const artifactsDir = join(ROOT, "artifacts");
 
-  // The app bundle tarball (also what the auto-updater downloads).
-  const tarball = join(buildFolder, `${appFileName}.tar.zst`);
-  if (!existsSync(tarball)) {
-    console.error(`App bundle tarball not found at ${tarball}`);
+  // The app bundle tarball (also what the auto-updater downloads). electrobun
+  // moves it into artifacts/ at the end of the build.
+  const tarball = findTarball(buildFolder, artifactsDir, platformPrefix, appFileName);
+  if (!tarball) {
+    console.error("App bundle tarball (tar.zst) not found in artifacts/ or build/");
     console.error("Run `bun run build:stable` on Windows first.");
     process.exit(1);
   }
@@ -147,6 +148,19 @@ function findZstd(): string | null {
   const candidates = ["dist-win-x64", "dist-win-arm64"].map(
     (d) => join(ROOT, "node_modules", "electrobun", d, "zig-zstd.exe"),
   );
+  return candidates.find((c) => existsSync(c)) ?? null;
+}
+
+function findTarball(
+  buildFolder: string,
+  artifactsDir: string,
+  platformPrefix: string,
+  appFileName: string,
+): string | null {
+  const candidates = [
+    join(artifactsDir, `${platformPrefix}-${appFileName}.tar.zst`),
+    join(buildFolder, `${appFileName}.tar.zst`),
+  ];
   return candidates.find((c) => existsSync(c)) ?? null;
 }
 
