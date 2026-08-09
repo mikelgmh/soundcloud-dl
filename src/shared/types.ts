@@ -145,6 +145,18 @@ export type AppRPCSchema = {
       };
       downloadCollection: { params: { name: string }; response: { ok: boolean; code: number } };
       cleanupNonFavorites: { params: {}; response: { removed: string[] } };
+      getPlaylists: {
+        params: {};
+        response: { playlists: { id: string; title: string; url: string }[] };
+      };
+      getPlaylistTracks: {
+        params: { url: string };
+        response: { tracks: LikedTrackPayload[]; tokenInvalid: boolean };
+      };
+      downloadUrls: {
+        params: { urls: string[] };
+        response: { ok: boolean; code: number };
+      };
       downloadAll: { params: {}; response: { ok: boolean; code: number } };
       downloadTrack: { params: { url: string }; response: { ok: boolean; code: number } };
       cancelDownload: { params: {}; response: { ok: boolean } };

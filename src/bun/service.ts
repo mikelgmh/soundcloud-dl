@@ -17,6 +17,7 @@ import {
   buildDownloadArgs,
   DEFAULT_FILENAME_TEMPLATE,
   downloadLikesStream,
+  fetchFlatEntries,
   fetchLikes,
 } from "../download";
 import {
@@ -489,8 +490,7 @@ export class Service {
   }
 
   /** Borra archivos descargados que ya no están en favoritos. */
-  async cleanupNonFavorites(): Promise<{ removed: string[] }> {
-    const config = this.requireDownloadConfig();
+  async cleanupNonFavorites(): Promise<{ removed: string[] }> {    const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     const favIds = new Set(this.getLikesCache().tracks.map((t) => t.id));
     const archive = readArchiveIds();
@@ -521,6 +521,57 @@ export class Service {
     };
     if (fs.existsSync(outDir)) walk(outDir);
     return { removed };
+  }
+
+  // ---- Playlists ----
+
+  /** Lista las playlists/sets del usuario. */
+  async getPlaylists(): Promise<{
+    playlists: { id: string; title: string; url: string }[];
+  }> {
+    const config = this.requireDownloadConfig();
+    const deps = await this.ensureDepsReady();
+    const { entries } = await fetchFlatEntries(
+      `https://soundcloud.com/${config.username}/sets`,
+      {
+        ytdlp: deps.ytdlp,
+        ffmpegDir: deps.ffmpegDir,
+        cookiesFile: writeCookiesFile(config.oauthToken!),
+        username: config.username!,
+      },
+    );
+    return {
+      playlists: entries.map((e) => ({ id: e.id, title: e.title, url: e.url })),
+    };
+  }
+
+  /** Canciones de una playlist concreta. */
+  async getPlaylistTracks(url: string): Promise<{
+    tracks: LikedTrack[];
+    tokenInvalid: boolean;
+  }> {
+    const config = this.requireDownloadConfig();
+    const deps = await this.ensureDepsReady();
+    const { entries, tokenInvalid } = await fetchFlatEntries(url, {
+      ytdlp: deps.ytdlp,
+      ffmpegDir: deps.ffmpegDir,
+      cookiesFile: writeCookiesFile(config.oauthToken!),
+      username: config.username!,
+    });
+    return { tracks: entries, tokenInvalid };
+  }
+
+  /** Descarga una lista de URLs (p.ej. una playlist entera). */
+  async downloadUrls(urls: string[]): Promise<{ ok: boolean; code: number }> {
+    const clean = urls.filter(Boolean);
+    if (clean.length === 0) throw new Error("No hay canciones para descargar.");
+    const config = this.requireDownloadConfig();
+    const outDir = config.outdir || DEFAULT_OUTDIR;
+    fs.mkdirSync(outDir, { recursive: true });
+    return this.runDownload(
+      buildDownloadArgs({ ...this.downloadOpts(config, outDir), urls: clean }),
+      `Descargando ${clean.length} canciones...`,
+    );
   }
 
   cancelDownload(): { ok: boolean } {

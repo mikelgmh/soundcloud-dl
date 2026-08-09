@@ -207,7 +207,7 @@ function updateProgress(p: DownloadProgressPayload): void {
 }
 
 // ---- Navegación ----
-const views = ["status", "download", "search", "settings", "developer"];
+const views = ["status", "download", "search", "collection", "settings", "developer"];
 
 function showView(name: string): void {
   for (const v of views) {
@@ -226,6 +226,9 @@ function showView(name: string): void {
   }
   if (name === "developer") {
     renderStats();
+  }
+  if (name === "collection") {
+    renderCollection();
   }
 }
 
@@ -1104,6 +1107,281 @@ $<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
     await renderSyncStats();
   }),
 );
+
+// ---- Colección (favoritos / playlists) ----
+const collectionState = {
+  source: "favorites" as "favorites" | "playlists",
+  playlistUrl: null as string | null,
+  playlistsCache: null as { id: string; title: string; url: string }[] | null,
+  playlistTracksCache: null as { url: string; tracks: LikedTrackPayload[] } | null,
+};
+
+function setSourceTab(active: "favorites" | "playlists"): void {
+  for (const name of ["favorites", "playlists"] as const) {
+    const btn = $<HTMLButtonElement>(`src-${name}`);
+    const on = name === active;
+    btn.classList.toggle("bg-brand-600", on);
+    btn.classList.toggle("text-white", on);
+    btn.classList.toggle("hover:bg-brand-500", on);
+  }
+}
+
+async function renderCollection(): Promise<void> {
+  setSourceTab(collectionState.source);
+  const content = $<HTMLElement>("collection-content");
+  content.textContent = "";
+
+  if (collectionState.source === "favorites") {
+    await renderCollectionFavorites();
+  } else if (collectionState.playlistUrl) {
+    await renderCollectionPlaylistTracks();
+  } else {
+    await renderCollectionPlaylists();
+  }
+}
+
+function collectionTrackRow(t: LikedTrackPayload): HTMLElement {
+  const row = document.createElement("div");
+  row.className =
+    "flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-900/70 px-3 py-2 hover:bg-ink-850/70 transition-colors";
+  const info = document.createElement("div");
+  info.className = "flex-1 min-w-0";
+  const title = document.createElement("p");
+  title.className = "text-sm text-ink-100 truncate";
+  title.textContent = t.title;
+  const sub = document.createElement("p");
+  sub.className = "text-xs text-ink-400 truncate";
+  sub.textContent = t.uploader ?? "SoundCloud";
+  info.appendChild(title);
+  info.appendChild(sub);
+
+  const btn = document.createElement("button");
+  btn.className =
+    "px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all shrink-0";
+  btn.textContent = "Descargar";
+  btn.addEventListener("click", () =>
+    withBusy("", async () => {
+      if (!guard()) return;
+      startDownloadView(t.title);
+      await api.request.downloadTrack({ url: t.url });
+      await renderSyncStats();
+      await renderHistory();
+    }),
+  );
+
+  row.appendChild(info);
+  row.appendChild(btn);
+  return row;
+}
+
+function startDownloadView(label: string): void {
+  showView("download");
+  $<HTMLDivElement>("dev-log").textContent = "";
+  $<HTMLParagraphElement>("dl-title").textContent = label;
+  $<HTMLButtonElement>("btn-cancel").classList.remove("hidden");
+}
+
+async function renderCollectionFavorites(): Promise<void> {
+  const content = $<HTMLElement>("collection-content");
+  if (!isApp) return;
+
+  let tracks: LikedTrackPayload[] = [];
+  try {
+    const cache = await api.request.getLikesCache({});
+    if (cache.tracks.length) {
+      tracks = cache.tracks;
+    } else {
+      const res = await api.request.refreshLikes({});
+      tracks = res.tracks;
+    }
+  } catch {
+    tracks = [];
+  }
+
+  if (!tracks.length) {
+    content.appendChild(emptyState("No hay favoritos todavía", "Refresca la lista desde Inicio si crees que falta algo."));
+    return;
+  }
+
+  const header = document.createElement("div");
+  header.className = "flex items-center justify-between gap-3 flex-wrap";
+  const h = document.createElement("p");
+  h.className = "text-sm text-ink-300";
+  h.textContent = `${tracks.length} canciones`;
+  const dl = document.createElement("button");
+  dl.className =
+    "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
+  dl.textContent = "Descargar todo";
+  dl.addEventListener("click", () =>
+    withBusy("", async () => {
+      if (!guard()) return;
+      startDownloadView("Tus favoritos");
+      await api.request.downloadAll({});
+      await renderSyncStats();
+      await renderHistory();
+    }),
+  );
+  header.appendChild(h);
+  header.appendChild(dl);
+
+  const list = document.createElement("div");
+  list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
+  for (const t of tracks) list.appendChild(collectionTrackRow(t));
+
+  content.appendChild(header);
+  content.appendChild(list);
+}
+
+async function renderCollectionPlaylists(): Promise<void> {
+  const content = $<HTMLElement>("collection-content");
+  if (!isApp) return;
+
+  if (!collectionState.playlistsCache) {
+    content.appendChild(loadingState("Cargando tus playlists..."));
+    try {
+      const res = await api.request.getPlaylists({});
+      collectionState.playlistsCache = res.playlists;
+    } catch (err) {
+      content.appendChild(emptyState("No se pudieron cargar las playlists", (err as Error).message));
+      return;
+    }
+  }
+
+  const playlists = collectionState.playlistsCache;
+  if (!playlists?.length) {
+    content.appendChild(emptyState("No tienes playlists", "Las playlists (sets) de tu cuenta aparecerán aquí."));
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "space-y-1.5";
+  for (const pl of playlists) {
+    const row = document.createElement("button");
+    row.className =
+      "w-full flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-900/70 px-4 py-3 text-left hover:bg-ink-850/70 hover:border-ink-700 transition-colors";
+    const icon = document.createElement("span");
+    icon.className =
+      "w-9 h-9 shrink-0 rounded-lg bg-ink-800 flex items-center justify-center text-ink-500";
+    icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>`;
+    const label = document.createElement("span");
+    label.className = "flex-1 min-w-0 text-sm font-medium text-ink-100 truncate";
+    label.textContent = pl.title;
+    const arrow = document.createElement("span");
+    arrow.className = "text-ink-500";
+    arrow.textContent = "›";
+    row.appendChild(icon);
+    row.appendChild(label);
+    row.appendChild(arrow);
+    row.addEventListener("click", () => {
+      collectionState.playlistUrl = pl.url;
+      renderCollection();
+    });
+    list.appendChild(row);
+  }
+  content.appendChild(list);
+}
+
+async function renderCollectionPlaylistTracks(): Promise<void> {
+  const content = $<HTMLElement>("collection-content");
+  if (!isApp) return;
+  const url = collectionState.playlistUrl!;
+
+  if (
+    !collectionState.playlistTracksCache ||
+    collectionState.playlistTracksCache.url !== url
+  ) {
+    content.appendChild(loadingState("Cargando canciones de la playlist..."));
+    try {
+      const res = await api.request.getPlaylistTracks({ url });
+      collectionState.playlistTracksCache = { url, tracks: res.tracks };
+    } catch (err) {
+      content.appendChild(emptyState("No se pudieron cargar las canciones", (err as Error).message));
+      return;
+    }
+  }
+
+  const tracks = collectionState.playlistTracksCache!.tracks;
+
+  const top = document.createElement("div");
+  top.className = "flex items-center justify-between gap-3 flex-wrap";
+  const left = document.createElement("div");
+  left.className = "flex items-center gap-2";
+  const back = document.createElement("button");
+  back.className =
+    "px-3 py-1.5 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors";
+  back.textContent = "‹ Atrás";
+  back.addEventListener("click", () => {
+    collectionState.playlistUrl = null;
+    renderCollection();
+  });
+  const count = document.createElement("p");
+  count.className = "text-sm text-ink-300";
+  count.textContent = `${tracks.length} canciones`;
+  left.appendChild(back);
+  left.appendChild(count);
+
+  const dl = document.createElement("button");
+  dl.className =
+    "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
+  dl.textContent = "Descargar todo";
+  dl.disabled = tracks.length === 0;
+  if (tracks.length === 0) dl.classList.add("opacity-50", "pointer-events-none");
+  dl.addEventListener("click", () =>
+    withBusy("", async () => {
+      if (!guard()) return;
+      startDownloadView("Playlist completa");
+      await api.request.downloadUrls({ urls: tracks.map((t) => t.url) });
+      await renderSyncStats();
+      await renderHistory();
+    }),
+  );
+  top.appendChild(left);
+  top.appendChild(dl);
+
+  content.appendChild(top);
+
+  if (!tracks.length) {
+    content.appendChild(emptyState("La playlist está vacía", ""));
+    return;
+  }
+  const list = document.createElement("div");
+  list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
+  for (const t of tracks) list.appendChild(collectionTrackRow(t));
+  content.appendChild(list);
+}
+
+function emptyState(title: string, detail: string): HTMLElement {
+  const box = document.createElement("div");
+  box.className =
+    "flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink-700 py-14 px-6 text-center";
+  const t = document.createElement("p");
+  t.className = "text-sm font-medium text-ink-200";
+  t.textContent = title;
+  box.appendChild(t);
+  if (detail) {
+    const d = document.createElement("p");
+    d.className = "text-xs text-ink-500 mt-1 max-w-xs";
+    d.textContent = detail;
+    box.appendChild(d);
+  }
+  return box;
+}
+
+function loadingState(text: string): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "flex items-center gap-2 text-sm text-ink-400 py-6";
+  box.innerHTML = `<span class="spinner spinner-accent"></span> ${text}`;
+  return box;
+}
+
+$<HTMLButtonElement>("src-favorites").addEventListener("click", () => {
+  collectionState.source = "favorites";
+  renderCollection();
+});
+$<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
+  collectionState.source = "playlists";
+  renderCollection();
+});
 
 // ---- Arranque ----
 showView("status");

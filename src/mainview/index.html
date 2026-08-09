@@ -83,6 +83,19 @@
             Buscar
           </button>
           <button
+            id="nav-collection"
+            data-view="collection"
+            class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 transition-colors"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="8" height="8" rx="2" />
+              <rect x="13" y="3" width="8" height="8" rx="2" />
+              <rect x="3" y="13" width="8" height="8" rx="2" />
+              <rect x="13" y="13" width="8" height="8" rx="2" />
+            </svg>
+            Colección
+          </button>
+          <button
             id="nav-settings"
             data-view="settings"
             class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-ink-400 hover:text-ink-100 hover:bg-ink-800/70 transition-colors"
@@ -460,6 +473,35 @@
           </div>
 
           <div id="search-results" class="space-y-2"></div>
+        </section>
+
+        <!-- Vista: Colección -->
+        <section id="view-collection" class="view mx-auto max-w-3xl p-8 md:p-10 space-y-5 hidden">
+          <header class="mb-2">
+            <h2 class="font-display text-2xl font-semibold text-white">
+              Colección
+            </h2>
+            <p class="text-sm text-ink-400 mt-1">
+              Explora tus favoritos o tus playlists y descarga lo que quieras.
+            </p>
+          </header>
+
+          <div class="flex gap-2">
+            <button
+              id="src-favorites"
+              class="src-btn px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
+            >
+              Favoritos
+            </button>
+            <button
+              id="src-playlists"
+              class="src-btn px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
+            >
+              Playlists
+            </button>
+          </div>
+
+          <div id="collection-content"></div>
         </section>
 
         <!-- Vista: Ajustes -->

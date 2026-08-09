@@ -72,6 +72,15 @@ function safetyArgs(opts: { skipExisting?: boolean }): string[] {
 }
 
 export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
+  const res = await fetchFlatEntries(likesUrl(opts.username), opts);
+  return { tracks: res.entries, tokenInvalid: res.tokenInvalid };
+}
+
+/** Lista las entradas planas (favoritos, sets o canciones de una playlist). */
+export async function fetchFlatEntries(
+  url: string,
+  opts: CountOptions,
+): Promise<{ entries: LikedTrack[]; tokenInvalid: boolean }> {
   const args = [
     opts.ytdlp,
     ...authArgs(opts),
@@ -79,15 +88,15 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
     '--impersonate', 'chrome',
     '--flat-playlist',
     '--dump-json',
-    likesUrl(opts.username),
+    url,
   ];
   const { code, stdout, stderr } = await run(args, { capture: true });
   if (code !== 0) {
     const tail = stderr.split('\n').slice(-6).join('\n');
-    throw new Error(`yt-dlp no pudo enumerar tus favoritos:\n${tail}`);
+    throw new Error(`yt-dlp no pudo obtener la lista:\n${tail}`);
   }
 
-  const tracks: LikedTrack[] = [];
+  const entries: LikedTrack[] = [];
   stdout
     .split('\n')
     .filter((l) => l.trim() !== '')
@@ -96,9 +105,9 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
         const j = JSON.parse(line);
         if (j && j.url) {
           const m = String(j.url).match(/soundcloud\.com\/([^/]+)\//);
-          tracks.push({
+          entries.push({
             id: String(j.id ?? i),
-            title: j.title ?? `Canción ${i}`,
+            title: j.title ?? `Elemento ${i}`,
             url: j.url ?? j.webpage_url,
             uploader: m?.[1],
             index: i,
@@ -110,7 +119,7 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
     });
 
   const tokenInvalid = /invalid|unable to login/i.test(stderr);
-  return { tracks, tokenInvalid };
+  return { entries, tokenInvalid };
 }
 
 export function buildDownloadArgs(opts: DownloadOptions): string[] {
