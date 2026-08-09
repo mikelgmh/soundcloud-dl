@@ -831,6 +831,11 @@ export class Service {
             this.emitter.log("info", line);
           }
           tracker.handle(line);
+          // SoundCloud no emite "Downloading item X of Y"; una canción acaba
+          // con "[download] 100%". Se avisa a la UI para refrescar el contador.
+          if (/\[download\]\s+100%/.test(line)) {
+            this.emitter.status("song", "done");
+          }
         },
         onStderr: (line) => {
           this.emitter.log("info", line);

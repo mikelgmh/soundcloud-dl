@@ -324,6 +324,9 @@ function updateStatus(stage: string, message: string): void {
       showDlControls();
       if (!processingQueue) toast(message, "info", false, 3000);
     }
+  } else if (stage === "song") {
+    // Una canción terminó durante el lote: refrescar el contador.
+    scheduleSyncStatsRefresh();
   } else if (stage === "likes" || stage === "login") {
     toast(message, "info");
   } else if (stage === "update") {
@@ -441,14 +444,9 @@ $<HTMLButtonElement>("btn-check-update").addEventListener("click", async () => {
 });
 
 function updateProgress(p: DownloadProgressPayload): void {
-  // Cuando avanza a una canción nueva del lote, la anterior acaba de
-  // completarse: refrescamos el contador de descargadas.
-  const songAdvanced = p.current > 0 && p.current !== trackCurrent;
   trackCurrent = p.current || 0;
   trackTotal = p.total || 0;
   if (!downloadStopped) setDownloading(true);
-
-  if (songAdvanced) scheduleSyncStatsRefresh();
 
   if (currentQueueItem) {
     currentQueueItem.percent = p.percent;
