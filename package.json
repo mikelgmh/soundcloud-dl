@@ -14,7 +14,9 @@
     "build:desktop": "electrobun build",
     "build:stable": "electrobun build --env=stable",
     "build:canary": "electrobun build --env=canary",
-    "build:mac:intel": "bun run build:stable"
+    "build:mac:intel": "bun run build:stable",
+    "build:win:installer": "bun run scripts/build-windows-installer.ts",
+    "build:windows": "bun run build:stable && bun run build:win:installer"
   },
   "dependencies": {
     "@clack/prompts": "^0.10.1",

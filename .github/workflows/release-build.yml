@@ -43,6 +43,15 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      - name: Instalar Inno Setup (solo Windows)
+        if: matrix.name == 'windows-x64'
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Crear instalador .exe con Inno Setup (solo Windows)
+        if: matrix.name == 'windows-x64'
+        run: bun run build:win:installer
+
       - uses: actions/upload-artifact@v4
         with:
           name: artifacts-${{ matrix.name }}
