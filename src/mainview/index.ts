@@ -255,7 +255,7 @@ $<HTMLButtonElement>("quality-recheck").addEventListener("click", () =>
 $<HTMLButtonElement>("quality-open-settings").addEventListener("click", () => {
   if (!isApp) return;
   api.request
-    .openExternal({ url: "https://soundcloud.com/settings/streaming" })
+    .openExternal({ url: "https://soundcloud.com/pricing" })
     .catch(() => {});
 });
 
