@@ -242,16 +242,16 @@ let trackTotal = 0;
 
 function setDownloading(value: boolean): void {
   downloading = value;
-  const banner = $<HTMLElement>("download-banner");
-  const text = $<HTMLElement>("download-banner-text");
+  const el = $<HTMLElement>("sidebar-download");
+  const text = $<HTMLElement>("sidebar-download-text");
   if (value) {
-    banner.classList.remove("hidden");
+    el.classList.remove("hidden");
     text.textContent =
       trackTotal > 0
         ? `Descargando ${trackCurrent} de ${trackTotal} canciones`
         : "Descargando canciones...";
   } else {
-    banner.classList.add("hidden");
+    el.classList.add("hidden");
     trackCurrent = 0;
     trackTotal = 0;
   }
