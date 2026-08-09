@@ -144,7 +144,6 @@
             <p
               id="sidebar-download-text"
               class="text-[11px] text-ink-400 leading-snug"
-              data-i18n="sidebar.downloading"
             >
               Descargando canciones...
             </p>
@@ -156,7 +155,7 @@
             class="flex items-center gap-2.5 rounded-xl border border-ink-800 bg-ink-850/80 px-3 py-2.5"
           >
             <span id="sidebar-dot" class="w-2 h-2 rounded-full bg-ink-600"></span>
-            <p id="sidebar-text" class="text-[11px] text-ink-400 leading-snug" data-i18n="sidebar.loading">
+            <p id="sidebar-text" class="text-[11px] text-ink-400 leading-snug">
               Cargando estado...
             </p>
           </div>
@@ -221,18 +220,17 @@
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 flex-wrap">
-                  <p id="account-text" class="font-medium text-white" data-i18n="account.notLogged">
+                  <p id="account-text" class="font-medium text-white">
                     No has iniciado sesión
                   </p>
                   <span
                     id="account-chip"
                     class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-ink-800 text-ink-400"
-                    data-i18n="account.noSessionChip"
                   >
                     sin sesión
                   </span>
                 </div>
-                <p id="account-user" class="text-xs text-ink-400 mt-0.5 truncate" data-i18n="account.loginPrompt">
+                <p id="account-user" class="text-xs text-ink-400 mt-0.5 truncate">
                   Inicia sesión para descargar tus favoritos
                 </p>
                 <div class="flex flex-wrap gap-2 mt-4">
@@ -313,7 +311,7 @@
         <section id="view-download" class="view mx-auto max-w-3xl p-8 md:p-10 space-y-5 hidden">
           <header class="mb-2">
             <h2 class="font-display text-2xl font-semibold text-white" data-i18n="downloads.title">Descargas</h2>
-            <p id="dl-stage" class="text-sm text-ink-400 mt-1" data-i18n="downloads.idle">
+            <p id="dl-stage" class="text-sm text-ink-400 mt-1">
               Sin descargas activas
             </p>
           </header>
@@ -323,7 +321,7 @@
             <div class="flex items-center justify-between gap-4 flex-wrap">
               <div>
                 <h3 class="font-medium text-white" data-i18n="sync.title">Sincronización</h3>
-                <p id="sync-text" class="text-sm text-ink-400 mt-1" data-i18n="sync.calculating">
+                <p id="sync-text" class="text-sm text-ink-400 mt-1">
                   Calculando...
                 </p>
               </div>
@@ -375,7 +373,7 @@
               <div id="dl-bar" class="progress-fill" style="width: 0%"></div>
             </div>
             <div class="flex justify-between text-xs text-ink-400 mt-2.5">
-              <span id="dl-count" class="tabular-nums" data-i18n="downloads.idle">Sin descargas activas</span>
+              <span id="dl-count" class="tabular-nums">Sin descargas activas</span>
               <span id="dl-percent" class="tabular-nums text-ink-300">0%</span>
             </div>
             <div id="dl-controls" class="hidden flex items-center gap-2 mt-4">
@@ -596,6 +594,13 @@
                   Elegir...
                 </button>
               </div>
+              <p
+                id="set-outdir-error"
+                class="hidden mt-1.5 text-xs text-red-400"
+                data-i18n="settings.outdirEmpty"
+              >
+                La carpeta de descargas no puede estar vacía
+              </p>
             </label>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
