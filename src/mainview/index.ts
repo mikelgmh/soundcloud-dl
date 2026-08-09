@@ -306,6 +306,8 @@ function updateStatus(stage: string, message: string): void {
     setAnimatedText($<HTMLParagraphElement>("dl-stage"), message);
     const done = /completada|código|erro/i.test(message);
     if (done) {
+      // Tras detener/terminar, se ignoran los progresos tardíos.
+      downloadStopped = true;
       // La cola de descargas no resetea la vista ni lanza un toast por canción.
       if (!processingQueue) {
         setDownloading(false);
@@ -317,6 +319,7 @@ function updateStatus(stage: string, message: string): void {
         }
       }
     } else {
+      downloadStopped = false;
       setDownloading(true);
       showDlControls();
       if (!processingQueue) toast(message, "info", false, 3000);
@@ -443,7 +446,7 @@ function updateProgress(p: DownloadProgressPayload): void {
   const songAdvanced = p.current > 0 && p.current !== trackCurrent;
   trackCurrent = p.current || 0;
   trackTotal = p.total || 0;
-  setDownloading(true);
+  if (!downloadStopped) setDownloading(true);
 
   if (songAdvanced) scheduleSyncStatsRefresh();
 
@@ -470,6 +473,9 @@ function updateProgress(p: DownloadProgressPayload): void {
 let downloading = false;
 let trackCurrent = 0;
 let trackTotal = 0;
+/** true tras detener/terminar una descarga: se ignoran los progresos tardíos
+ *  para que el indicador del sidebar no reaparezca. */
+let downloadStopped = false;
 let syncStatsTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Refresca (con debounce) el contador de descargadas y los checks. */
@@ -1187,6 +1193,7 @@ $<HTMLButtonElement>("btn-pause").addEventListener("click", () => {
 
 $<HTMLButtonElement>("btn-stop").addEventListener("click", () => {
   if (!guard()) return;
+  downloadStopped = true;
   clearQueue();
   setDownloading(false);
   resetDownloadUI();
@@ -1436,7 +1443,7 @@ function seedSettings(c: ConfigPayload): void {
   if (!langUserSet) {
     setLang(resolveLang(c.lang));
   }
-  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s");
+  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s [%(id)s]");
   updateTemplatePreview();
   $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
   applyTheme(c.theme ?? "dark");

@@ -35,7 +35,9 @@ export interface DownloadOptions extends Session {
   archiveFile?: string;
 }
 
-export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s';
+// La plantilla por defecto incluye [%(id)s] para poder detectar de forma
+// fiable qué canciones están descargadas (el id es único por pista).
+export const DEFAULT_FILENAME_TEMPLATE = '%(title)s - %(artist)s [%(id)s]';
 
 const LOSSLESS_FORMATS = ['flac', 'wav', 'alac'];
 
@@ -136,6 +138,7 @@ export function parseEntriesOutput(
             title: j.title ?? `Elemento ${i}`,
             url: pageUrl,
             uploader: j.uploader ?? m?.[1],
+            artist: j.artist ?? j.artists?.[0],
             index: i,
           });
         }
@@ -220,12 +223,12 @@ const COMMON_AUDIO_EXTS = [
  *  igual que yt-dlp (--windows-filenames), para comparar con el disco. */
 export function renderFilenameTemplate(
   template: string,
-  track: { id: string; title: string; uploader?: string; index?: number },
+  track: { id: string; title: string; uploader?: string; artist?: string; index?: number },
 ): string {
   const vars: Record<string, string> = {
     title: track.title ?? '',
     uploader: track.uploader ?? '',
-    artist: track.uploader ?? '',
+    artist: track.artist ?? track.uploader ?? '',
     id: String(track.id ?? ''),
     album: '',
     ext: '',
@@ -247,7 +250,17 @@ export function renderFilenameTemplate(
 /** Escanea la carpeta de salida y devuelve los "stems" (ruta relativa sin
  *  extensión) de los ficheros de audio, normalizados con '/'. */
 export function scanAudioStems(outDir: string): Set<string> {
+  return scanDownloadedAudio(outDir).stems;
+}
+
+/** Escanea la carpeta de salida y devuelve los stems de los ficheros de audio
+ *  y los ids de pista que aparecen en sus nombres ([<id>]). */
+export function scanDownloadedAudio(outDir: string): {
+  stems: Set<string>;
+  ids: Set<string>;
+} {
   const stems = new Set<string>();
+  const ids = new Set<string>();
   const walk = (dir: string, rel = ''): void => {
     let entries: fs.Dirent[];
     try {
@@ -263,25 +276,93 @@ export function scanAudioStems(outDir: string): Set<string> {
         const ext = path.extname(e.name).slice(1).toLowerCase();
         if (COMMON_AUDIO_EXTS.includes(ext)) {
           stems.add(relPath.slice(0, -(ext.length + 1)));
+          const idm = e.name.match(/\[(\d+)\]/);
+          if (idm) ids.add(idm[1]);
         }
       }
     }
   };
   walk(outDir);
-  return stems;
+  return { stems, ids };
 }
 
-/** Busca el fichero real de una pista según la plantilla; devuelve la ruta
- *  completa o null si no existe. */
+/** ¿Hay un fichero en disco que corresponda a la pista? Estrategias:
+ *  1. el id aparece en el nombre ([<id>]);
+ *  2. el stem coincide con la plantilla renderizada;
+ *  3. un fichero empieza por el título de la pista (cubre plantillas antiguas
+ *     sin id y con artist != uploader). */
+export function trackHasDownloadedFile(
+  stems: Set<string>,
+  ids: Set<string>,
+  template: string,
+  track: {
+    id: string;
+    title: string;
+    uploader?: string;
+    artist?: string;
+    index?: number;
+  },
+): boolean {
+  if (ids.has(track.id)) return true;
+  if (stems.has(renderFilenameTemplate(template, track))) return true;
+  const title = track.title?.trim();
+  if (title) {
+    for (const s of stems) {
+      if (s === title) return true;
+      const next = s.charAt(title.length);
+      if (
+        s.startsWith(title) &&
+        (next === '-' || next === '_' || next === ' ' || next === '')
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Busca el fichero real de una pista según la plantilla o su id; devuelve la
+ *  ruta completa o null si no existe. */
 export function findTrackFile(
   outDir: string,
   template: string,
-  track: { id: string; title: string; uploader?: string; index?: number },
+  track: { id: string; title: string; uploader?: string; artist?: string; index?: number },
 ): string | null {
   const base = renderFilenameTemplate(template, track);
   for (const ext of COMMON_AUDIO_EXTS) {
     const p = path.join(outDir, `${base}.${ext}`);
     if (fs.existsSync(p)) return p;
   }
-  return null;
+  // Fallback por id en el nombre del fichero (plantillas sin id).
+  return findFileByTrackId(outDir, track.id);
+}
+
+/** Busca un fichero de audio cuyo nombre contenga [<trackId>]. */
+export function findFileByTrackId(outDir: string, trackId: string): string | null {
+  const found = scanDownloadedAudioWithPaths(outDir).find((p) =>
+    p.includes(`[${trackId}]`),
+  );
+  return found ?? null;
+}
+
+function scanDownloadedAudioWithPaths(outDir: string): string[] {
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.isFile()) {
+        const ext = path.extname(e.name).slice(1).toLowerCase();
+        if (COMMON_AUDIO_EXTS.includes(ext)) files.push(full);
+      }
+    }
+  };
+  walk(outDir);
+  return files;
 }

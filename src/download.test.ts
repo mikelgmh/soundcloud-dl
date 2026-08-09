@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { DownloadOptions } from "./download";
 
-const { buildDownloadArgs, parseEntriesOutput } = await import("./download");
+const { buildDownloadArgs, parseEntriesOutput, trackHasDownloadedFile } = await import("./download");
 
 const base: DownloadOptions = {
   ytdlp: "/usr/bin/yt-dlp",
@@ -52,7 +52,7 @@ describe("buildDownloadArgs", () => {
   it("pasa el archivo de cookies y -o con la plantilla", () => {
     const a = argsOf();
     expect(a).toEqual(expect.arrayContaining(["--cookies", "/cookies.txt"]));
-    expect(a[a.indexOf("-o") + 1]).toBe("/out/%(title)s - %(artist)s.%(ext)s");
+    expect(a[a.indexOf("-o") + 1]).toBe("/out/%(title)s - %(artist)s [%(id)s].%(ext)s");
   });
 
   it("el formato 'original' no convierte", () => {
@@ -109,6 +109,54 @@ describe("buildDownloadArgs", () => {
   it("incluye --ffmpeg-location si se indica el directorio", () => {
     const a = argsOf({ ffmpegDir: "/ff" });
     expect(a).toEqual(expect.arrayContaining(["--ffmpeg-location", "/ff"]));
+  });
+});
+
+describe("trackHasDownloadedFile", () => {
+  const TEMPLATE = "%(title)s - %(artist)s [%(id)s]";
+
+  it("coincide por id en el nombre del fichero", () => {
+    expect(
+      trackHasDownloadedFile(
+        new Set(["Chill - Ocean [555]"]),
+        new Set(["555"]),
+        TEMPLATE,
+        { id: "555", title: "Chill", index: 0 },
+      ),
+    ).toBe(true);
+  });
+
+  it("coincide por plantilla exacta con artist en caché", () => {
+    expect(
+      trackHasDownloadedFile(
+        new Set(["Golden Hour - Maria Be"]),
+        new Set(),
+        TEMPLATE,
+        { id: "777", title: "Golden Hour", uploader: "mariabe", artist: "Maria Be", index: 0 },
+      ),
+    ).toBe(true);
+  });
+
+  it("coincide por prefijo del título (plantillas antiguas sin id)", () => {
+    expect(
+      trackHasDownloadedFile(
+        new Set(["Deep Ambient - Juan García"]),
+        new Set(),
+        TEMPLATE,
+        { id: "101", title: "Deep Ambient", uploader: "somechannel", index: 0 },
+      ),
+    ).toBe(true);
+  });
+
+  it("no coincide si el fichero no está", () => {
+    expect(
+      trackHasDownloadedFile(
+        new Set(["Deep Ambient - Juan García"]),
+        new Set(),
+        TEMPLATE,
+        { id: "999", title: "Otra Canción", uploader: "x", index: 0 },
+      ),
+    ).toBe(false);
   });
 });
 

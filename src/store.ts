@@ -86,6 +86,8 @@ export interface LikedTrack {
   title: string;
   url: string;
   uploader?: string;
+  /** Nombre del artista (puede diferir del subidor). */
+  artist?: string;
   index: number;
 }
 

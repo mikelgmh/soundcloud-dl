@@ -20,8 +20,8 @@ import {
   fetchFlatEntries,
   fetchLikes,
   findTrackFile,
-  renderFilenameTemplate,
-  scanAudioStems,
+  scanDownloadedAudio,
+  trackHasDownloadedFile,
 } from "../download";
 import {
   appendHistory,
@@ -403,9 +403,23 @@ export class Service {
     return cached ? { tracks: cached.tracks, cachedAt: cached.cachedAt } : { tracks: [], cachedAt: null };
   }
 
-  /** "Stems" de los ficheros de audio presentes en la carpeta de salida. */
-  private downloadedStems(): Set<string> {
-    return scanAudioStems(this.config.outdir || DEFAULT_OUTDIR);
+  /** "Stems" e ids de los ficheros de audio presentes en la carpeta de salida. */
+  private downloadedAudio(): { stems: Set<string>; ids: Set<string> } {
+    return scanDownloadedAudio(this.config.outdir || DEFAULT_OUTDIR);
+  }
+
+  /** ¿Está descargada la pista? Coincide por id, por plantilla o por título. */
+  private trackDownloaded(
+    track: LikedTrack,
+    stems: Set<string>,
+    ids: Set<string>,
+  ): boolean {
+    return trackHasDownloadedFile(
+      stems,
+      ids,
+      this.getFilenameTemplate(this.config),
+      track,
+    );
   }
 
   /** Cuenta cuántos favoritos ya están descargados y cuántos faltan, mirando
@@ -419,10 +433,9 @@ export class Service {
         tracks = [];
       }
     }
-    const template = this.getFilenameTemplate(this.config);
-    const stems = this.downloadedStems();
+    const { stems, ids } = this.downloadedAudio();
     const downloaded = tracks.filter((t) =>
-      stems.has(renderFilenameTemplate(template, t)),
+      this.trackDownloaded(t, stems, ids),
     ).length;
     return {
       total: tracks.length,
@@ -433,11 +446,10 @@ export class Service {
 
   /** Ids de las canciones descargadas (según los ficheros en disco). */
   getDownloadedIds(): { ids: string[] } {
-    const template = this.getFilenameTemplate(this.config);
-    const stems = this.downloadedStems();
+    const { stems, ids } = this.downloadedAudio();
     return {
       ids: this.getLikesCache()
-        .tracks.filter((t) => stems.has(renderFilenameTemplate(template, t)))
+        .tracks.filter((t) => this.trackDownloaded(t, stems, ids))
         .map((t) => t.id),
     };
   }
@@ -469,10 +481,9 @@ export class Service {
     const outDir = config.outdir || DEFAULT_OUTDIR;
     fs.mkdirSync(outDir, { recursive: true });
     const tracks = this.getLikesCache().tracks;
-    const template = this.getFilenameTemplate(config);
-    const stems = scanAudioStems(outDir);
+    const { stems, ids } = scanDownloadedAudio(outDir);
     const missing = tracks.filter(
-      (t) => !stems.has(renderFilenameTemplate(template, t)),
+      (t) => !this.trackDownloaded(t, stems, ids),
     );
     if (missing.length === 0) {
       throw new Error(this.msg("dl.nothingMissing"));
