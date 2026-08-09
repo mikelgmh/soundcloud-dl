@@ -523,13 +523,13 @@ export class Service {
     return { items: readHistory(30) };
   }
 
-  /** Borra archivos descargados que ya no están en favoritos. */
-  async cleanupNonFavorites(): Promise<{ removed: string[] }> {
+  /** Archivos que se borrarían con la limpieza (sin borrarlos). */
+  private computeCleanupCandidates(): string[] {
     const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     const favIds = new Set(this.getLikesCache().tracks.map((t) => t.id));
     const archive = readArchiveIds();
-    const removed: string[] = [];
+    const candidates: string[] = [];
     const walk = (dir: string): void => {
       let entries: fs.Dirent[] = [];
       try {
@@ -544,17 +544,31 @@ export class Service {
         } else {
           const m = entry.name.match(/\[(\d+)\]/);
           if (m && archive.has(m[1]) && !favIds.has(m[1])) {
-            try {
-              fs.unlinkSync(p);
-              removed.push(p);
-            } catch {
-              // seguir
-            }
+            candidates.push(p);
           }
         }
       }
     };
     if (fs.existsSync(outDir)) walk(outDir);
+    return candidates;
+  }
+
+  /** Cuántos archivos se borrarían con la limpieza (para la modal). */
+  cleanupPreview(): { count: number } {
+    return { count: this.computeCleanupCandidates().length };
+  }
+
+  /** Borra archivos descargados que ya no están en favoritos. */
+  async cleanupNonFavorites(): Promise<{ removed: string[] }> {
+    const removed: string[] = [];
+    for (const p of this.computeCleanupCandidates()) {
+      try {
+        fs.unlinkSync(p);
+        removed.push(p);
+      } catch {
+        // seguir
+      }
+    }
     return { removed };
   }
 

@@ -1002,6 +1002,42 @@
       </div>
     </div>
 
+    <!-- Modal: confirmar limpieza de no favoritos -->
+    <div
+      id="cleanup-modal"
+      class="hidden fixed inset-0 z-40 flex items-center justify-center p-4"
+    >
+      <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" data-close-cleanup></div>
+      <div
+        class="relative w-full max-w-sm rounded-2xl border border-ink-700 bg-ink-900 p-5 shadow-2xl shadow-black/50"
+      >
+        <h3 class="font-display text-lg font-semibold text-white" data-i18n="cleanup.title">
+          Limpiar no favoritos
+        </h3>
+        <p class="text-sm text-ink-400 mt-2 leading-relaxed">
+          <span data-i18n="cleanup.message">Se van a borrar</span>
+          <span id="cleanup-count" class="text-red-400 font-semibold">0</span>
+          <span data-i18n="cleanup.messageEnd">archivos de la carpeta de descargas. Esta acción no se puede deshacer.</span>
+        </p>
+        <div class="flex justify-end gap-2 mt-5">
+          <button
+            id="cleanup-cancel"
+            class="px-4 py-2 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors"
+            data-i18n="common.cancel"
+          >
+            Cancelar
+          </button>
+          <button
+            id="cleanup-confirm"
+            class="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled
+          >
+            Borrar (3)
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="views://mainview/index.js"></script>
   </body>
 </html>

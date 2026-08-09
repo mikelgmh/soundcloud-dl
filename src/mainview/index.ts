@@ -1507,14 +1507,56 @@ async function renderStats(): Promise<void> {
 }
 
 // ---- Limpieza de no favoritos ----
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function openCleanupModal(count: number): void {
+  $<HTMLElement>("cleanup-modal").classList.remove("hidden");
+  $<HTMLElement>("cleanup-count").textContent = String(count);
+  const btn = $<HTMLButtonElement>("cleanup-confirm");
+  btn.disabled = true;
+  let remaining = 3;
+  btn.textContent = T("cleanup.confirmN", { n: remaining });
+  cleanupTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      if (cleanupTimer) clearInterval(cleanupTimer);
+      cleanupTimer = null;
+      btn.disabled = false;
+      btn.textContent = T("cleanup.confirm", { count });
+    } else {
+      btn.textContent = T("cleanup.confirmN", { n: remaining });
+    }
+  }, 1000);
+}
+
+function closeCleanupModal(): void {
+  if (cleanupTimer) clearInterval(cleanupTimer);
+  cleanupTimer = null;
+  $<HTMLElement>("cleanup-modal").classList.add("hidden");
+}
+
 $<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
   withBusy("btn-cleanup", async () => {
     if (!guard()) return;
-    const ok = window.confirm(
-      T("toast.confirmCleanup"),
-    );
-    if (!ok) return;
+    const res = await api.request.cleanupPreview({});
+    if (res.count === 0) {
+      toast(T("toast.cleanupNone"), "info");
+      return;
+    }
+    openCleanupModal(res.count);
+  }),
+);
+
+$<HTMLButtonElement>("cleanup-cancel").addEventListener("click", closeCleanupModal);
+document
+  .querySelectorAll<HTMLElement>("[data-close-cleanup]")
+  .forEach((el) => el.addEventListener("click", closeCleanupModal));
+
+$<HTMLButtonElement>("cleanup-confirm").addEventListener("click", () =>
+  withBusy("cleanup-confirm", async () => {
+    if (!guard()) return;
     const res = await api.request.cleanupNonFavorites({});
+    closeCleanupModal();
     if (res.removed.length) {
       toast(T("toast.cleanupRemoved", { count: res.removed.length }), "success");
     } else {

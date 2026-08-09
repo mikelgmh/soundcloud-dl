@@ -143,6 +143,7 @@ export type AppRPCSchema = {
       importConfig: { params: { json: string }; response: { ok: boolean } };
       getHistory: { params: {}; response: { items: HistoryItemPayload[] } };
       cleanupNonFavorites: { params: {}; response: { removed: string[] } };
+      cleanupPreview: { params: {}; response: { count: number } };
       getPlaylists: {
         params: {};
         response: { playlists: { id: string; title: string; url: string }[] };

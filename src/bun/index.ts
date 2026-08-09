@@ -48,6 +48,7 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       importConfig: async ({ json }) => service.importConfig(json),
       getHistory: async () => service.getHistory(),
       cleanupNonFavorites: async () => service.cleanupNonFavorites(),
+      cleanupPreview: async () => service.cleanupPreview(),
       getPlaylists: async () => service.getPlaylists(),
       getPlaylistTracks: async ({ url }) => service.getPlaylistTracks(url),
       searchSoundcloud: async ({ query }) => service.searchSoundcloud(query),
