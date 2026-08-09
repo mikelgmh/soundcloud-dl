@@ -669,6 +669,7 @@ $<HTMLButtonElement>("queue-next").addEventListener("click", () => {
 const views = ["status", "download", "search", "collection", "settings", "developer", "about"];
 
 function showView(name: string): void {
+  document.querySelector<HTMLElement>("main")?.scrollTo(0, 0);
   for (const v of views) {
     $<HTMLElement>(`view-${v}`).classList.toggle("hidden", v !== name);
   }
