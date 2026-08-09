@@ -32,6 +32,7 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       refreshLikes: async () => service.refreshLikes(),
       getLikesCache: async () => service.getLikesCache(),
       getSyncStats: async () => service.getSyncStats(),
+      getDownloadedIds: async () => service.getDownloadedIds(),
       downloadUrl: async ({ url }) => service.downloadUrl(url),
       exportConfig: async () => service.exportConfig(),
       importConfig: async ({ json }) => service.importConfig(json),

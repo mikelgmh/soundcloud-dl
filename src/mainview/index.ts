@@ -106,6 +106,7 @@ const isApp = !!api;
 
 // ---- Cola de descargas ----
 interface QueueItem {
+  id: string;
   url: string;
   title: string;
   status: "queued" | "downloading" | "done" | "error";
@@ -115,6 +116,10 @@ interface QueueItem {
 let downloadQueue: QueueItem[] = [];
 let processingQueue = false;
 let currentQueueItem: QueueItem | null = null;
+
+// Canciones ya descargadas (archivo de sincronización) y sus botones.
+let downloadedIds = new Set<string>();
+const downloadButtons = new Map<string, HTMLButtonElement>();
 
 // ---- Toasts ----
 function toast(
@@ -372,6 +377,14 @@ function renderQueueItem(item: QueueItem): void {
     btn.className = DL_BTN_BASE + " cursor-default";
     btn.innerHTML =
       `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
+  } else if (item.status === "done") {
+    if (downloadedIds.has(item.id)) {
+      setDownloadedButtonState(btn, true);
+    } else {
+      btn.disabled = false;
+      btn.className = DL_BTN_BASE;
+      btn.textContent = "Descargar";
+    }
   } else {
     btn.disabled = false;
     btn.className = DL_BTN_BASE;
@@ -380,7 +393,57 @@ function renderQueueItem(item: QueueItem): void {
   updateQueueRowStatus(item);
 }
 
-function enqueueDownload(url: string, title: string, btn: HTMLButtonElement): void {
+function setDownloadedButtonState(
+  btn: HTMLButtonElement,
+  downloaded: boolean,
+): void {
+  if (downloaded) {
+    btn.disabled = true;
+    btn.className = DL_BTN_BASE + " opacity-50 cursor-default";
+    btn.innerHTML =
+      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="inline-block align-middle"><path d="m5 13 4 4L19 7"/></svg>` +
+      `<span>Descargada</span>`;
+  } else {
+    btn.disabled = false;
+    btn.className = DL_BTN_BASE;
+    btn.textContent = "Descargar";
+  }
+}
+
+async function refreshDownloadedIds(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const res = await api.request.getDownloadedIds({});
+    downloadedIds = new Set(res.ids);
+  } catch {
+    downloadedIds = new Set();
+  }
+  updateAllDownloadButtons();
+}
+
+function updateAllDownloadButtons(): void {
+  for (const [id, btn] of downloadButtons) {
+    if (!btn.isConnected) {
+      downloadButtons.delete(id);
+      continue;
+    }
+    // No sobrescribir el estado de la cola (en cola / descargando).
+    const inQueue = downloadQueue.some(
+      (q) =>
+        q.id === id &&
+        (q.status === "queued" || q.status === "downloading"),
+    );
+    if (inQueue) continue;
+    setDownloadedButtonState(btn, downloadedIds.has(id));
+  }
+}
+
+function enqueueDownload(
+  id: string,
+  url: string,
+  title: string,
+  btn: HTMLButtonElement,
+): void {
   if (!guard()) return;
   const existing = downloadQueue.find((q) => q.url === url);
   if (
@@ -390,7 +453,7 @@ function enqueueDownload(url: string, title: string, btn: HTMLButtonElement): vo
     toast("Esa canción ya está en la cola", "warn");
     return;
   }
-  const item: QueueItem = { url, title, status: "queued", percent: 0, button: btn };
+  const item: QueueItem = { id, url, title, status: "queued", percent: 0, button: btn };
   if (existing) {
     existing.status = "queued";
     existing.percent = 0;
@@ -423,6 +486,7 @@ async function processQueue(): Promise<void> {
         currentQueueItem.status = "error";
         toast((err as Error).message, "error", true);
       }
+      await refreshDownloadedIds();
       renderQueueItem(currentQueueItem);
       await renderSyncStats();
       await renderHistory();
@@ -435,11 +499,19 @@ async function processQueue(): Promise<void> {
   }
 }
 
-function makeDownloadButton(t: { url: string; title: string }): HTMLButtonElement {
+function makeDownloadButton(t: {
+  id: string;
+  url: string;
+  title: string;
+}): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = DL_BTN_BASE;
   btn.textContent = "Descargar";
-  btn.addEventListener("click", () => enqueueDownload(t.url, t.title, btn));
+  downloadButtons.set(t.id, btn);
+  if (downloadedIds.has(t.id)) setDownloadedButtonState(btn, true);
+  btn.addEventListener("click", () =>
+    enqueueDownload(t.id, t.url, t.title, btn),
+  );
   return btn;
 }
 
@@ -588,6 +660,7 @@ $<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
     if (!guard()) return;
     $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
+    await refreshDownloadedIds();
     await renderSyncStats();
   }),
 );
@@ -596,6 +669,7 @@ $<HTMLButtonElement>("btn-sync-all").addEventListener("click", () =>
     if (!guard()) return;
     $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
+    await refreshDownloadedIds();
     await renderSyncStats();
     await renderHistory();
   }),
@@ -876,6 +950,7 @@ $<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
     showView("download");
     $<HTMLDivElement>("dev-log").textContent = "";
     await api.request.downloadAll({});
+    await refreshDownloadedIds();
     await renderSyncStats();
   }),
 );
@@ -1034,6 +1109,7 @@ $<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
     $<HTMLParagraphElement>("dl-title").textContent = url;
     showDlControls();
     await api.request.downloadUrl({ url });
+    await refreshDownloadedIds();
     await renderSyncStats();
     await renderHistory();
   }),
@@ -1325,6 +1401,7 @@ $<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
     } else {
       toast("No había canciones que limpiar", "info");
     }
+    await refreshDownloadedIds();
     await renderSyncStats();
   }),
 );
@@ -1429,6 +1506,7 @@ async function renderCollectionFavorites(): Promise<void> {
       if (!guard()) return;
       startDownloadView("Tus favoritos");
       await api.request.downloadAll({});
+    await refreshDownloadedIds();
       await renderSyncStats();
       await renderHistory();
     }),
@@ -1543,6 +1621,7 @@ async function renderCollectionPlaylistTracks(): Promise<void> {
       if (!guard()) return;
       startDownloadView("Playlist completa");
       await api.request.downloadUrls({ urls: tracks.map((t) => t.url) });
+    await refreshDownloadedIds();
       await renderSyncStats();
       await renderHistory();
     }),
@@ -1598,6 +1677,7 @@ $<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
 // ---- Arranque ----
 resetDownloadUI();
 showView("status");
+refreshDownloadedIds();
 (async () => {
   let s = await loadStatus();
   if (s && !s.deps.ready) {

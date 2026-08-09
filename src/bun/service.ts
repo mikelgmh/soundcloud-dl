@@ -359,6 +359,11 @@ export class Service {
     };
   }
 
+  /** Ids de las canciones ya descargadas (archivo de sincronización). */
+  getDownloadedIds(): { ids: string[] } {
+    return { ids: [...readArchiveIds()] };
+  }
+
   private getLikesCount(): number | null {
     const c = this.getLikesCache();
     return c.cachedAt ? c.tracks.length : null;

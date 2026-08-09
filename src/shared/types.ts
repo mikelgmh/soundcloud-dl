@@ -123,6 +123,7 @@ export type AppRPCSchema = {
         response: { tracks: LikedTrackPayload[]; cachedAt: number | null };
       };
       getSyncStats: { params: {}; response: SyncStatsPayload };
+      getDownloadedIds: { params: {}; response: { ids: string[] } };
       downloadUrl: { params: { url: string }; response: { ok: boolean; code: number } };
       exportConfig: { params: {}; response: { json: string } };
       importConfig: { params: { json: string }; response: { ok: boolean } };
