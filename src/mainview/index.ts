@@ -1853,6 +1853,7 @@ async function initAbout(): Promise<void> {
   if (!isApp) return;
   try {
     const info = await api.request.getAppInfo({});
+    $<HTMLElement>("about-version").textContent = `v${info.version}`;
     $<HTMLElement>("about-repo").dataset.openUrl = info.repo;
     $<HTMLElement>("about-license").dataset.openUrl = info.licenseUrl;
   } catch {
