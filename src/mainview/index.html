@@ -642,6 +642,11 @@
                   <option value="vorbis" data-i18n="fmt.vorbis">OGG (Vorbis)</option>
                   <option value="original" data-i18n="fmt.original">Original (sin convertir)</option>
                 </select>
+                <span class="text-xs text-ink-500 mt-1.5 block leading-relaxed" data-i18n="settings.losslessNote">
+                  FLAC, WAV y MP3 se generan reconvirtiendo el stream: no son
+                  audio sin pérdida real. Para la máxima calidad usa M4A u
+                  Original.
+                </span>
               </label>
 
               <label class="block">
@@ -657,6 +662,10 @@
                   <option value="96K">96 kbps</option>
                   <option value="64K">64 kbps</option>
                 </select>
+                <span class="text-xs text-ink-500 mt-1.5 block leading-relaxed" data-i18n="settings.qualityNote">
+                  La máxima calidad es AAC 256 kbps (con Go+ / Next Pro). El
+                  ajuste "High quality streaming" no afecta a las descargas.
+                </span>
               </label>
             </div>
 
@@ -691,17 +700,6 @@
                 separadores. Usa "/" para crear subcarpetas.
               </p>
             </div>
-
-            <p class="text-xs text-ink-500 leading-relaxed" data-i18n="settings.qualityNote">
-              La máxima calidad de descarga es AAC 256 kbps (con Go+ / Next
-              Pro). El ajuste "High quality streaming" de SoundCloud no afecta
-              a las descargas.
-            </p>
-            <p class="text-xs text-ink-500 leading-relaxed" data-i18n="settings.losslessNote">
-              FLAC, WAV y MP3 se generan reconvirtiendo el stream de SoundCloud:
-              no son audio sin pérdida real. Para la máxima calidad usa M4A u
-              Original.
-            </p>
 
             <div class="border-t border-ink-800 pt-4 flex items-center gap-2 flex-wrap">
               <button
