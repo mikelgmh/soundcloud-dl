@@ -825,11 +825,16 @@ export class Service {
       this.abort = new AbortController();
       this.controller = { pause() {}, resume() {} };
       const tracker = new DownloadTracker((p) => this.emitter.progress(p));
+      const tail: string[] = [];
+      const pushTail = (line: string): void => {
+        if (tail.push(line) > 40) tail.shift();
+      };
       const code = await this.runStreamFn(args, {
         onStdout: (line) => {
           if (!/^\[download\]\s+\d+(?:\.\d+)?%/.test(line)) {
             this.emitter.log("info", line);
           }
+          pushTail(line);
           tracker.handle(line);
           // SoundCloud no emite "Downloading item X of Y"; una canción acaba
           // con "[download] 100%". Se avisa a la UI para refrescar el contador.
@@ -839,6 +844,7 @@ export class Service {
         },
         onStderr: (line) => {
           this.emitter.log("info", line);
+          pushTail(line);
           tracker.handle(line);
         },
         signal: this.abort.signal,
@@ -847,11 +853,12 @@ export class Service {
       this.abort = null;
       this.controller = null;
       tracker.handle("");
+      const out = tail.join("\n");
       this.emitter.status(
         "download",
         code === 0
           ? this.msg("dl.completed")
-          : this.msg("dl.finishedCode", { code }),
+          : this.downloadError(out) ?? this.msg("dl.finishedCode", { code }),
       );
 
       // Historial + notificación del sistema al terminar.
@@ -884,5 +891,22 @@ export class Service {
     const url = args[args.length - 1] ?? "";
     if (/\/likes$/.test(url)) return "favoritos";
     return url;
+  }
+
+  /** Devuelve un mensaje claro si la salida de yt-dlp indica un error conocido. */
+  private downloadError(out: string): string | null {
+    if (/Provided authorization token is invalid/i.test(out)) {
+      return this.msg("dl.errAuth");
+    }
+    if (/Unable to download webpage: HTTP Error 400|HTTP Error 403/i.test(out)) {
+      return this.msg("dl.errBlocked");
+    }
+    if (/DRM protected/i.test(out)) {
+      return this.msg("dl.errDrm");
+    }
+    if (/geo[ -]?restricted|not available in your region|geoblocked/i.test(out)) {
+      return this.msg("dl.errGeo");
+    }
+    return null;
   }
 }

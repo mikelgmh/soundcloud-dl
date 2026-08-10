@@ -923,9 +923,7 @@ async function startBatch(kind: "all" | "missing"): Promise<void> {
     $("#dl-active").classList.remove("hidden");
     renderSidebarState();
     const r = kind === "all" ? await api.request.downloadAll({}) : await api.request.downloadMissing({});
-    if (!r.ok && r.code !== 0) {
-      toast("La descarga terminó con código " + r.code, "warn");
-    }
+    void r;
   } catch (err) {
     toast((err as Error).message, "error");
   } finally {
@@ -1022,7 +1020,10 @@ function scheduleSyncRefresh(): void {
 function onStatus(stage: string, message: string): void {
   if (stage === "download") {
     const done = /completada|finaliz|código|erro/i.test(message);
-    if (!done) {
+    if (done) {
+      $("#dl-active").classList.add("hidden");
+      toast(message, /completad/i.test(message) ? "success" : "error");
+    } else {
       $("#dl-active").classList.remove("hidden");
     }
   } else if (stage === "song") {
