@@ -137,6 +137,7 @@ export function parseEntriesOutput(
             url: pageUrl,
             uploader: j.uploader ?? m?.[1],
             artist: j.artist ?? j.artists?.[0],
+            thumbnail: j.thumbnail ?? j.artwork_url,
             index: i,
           });
         }

@@ -139,6 +139,7 @@ interface QueueItem {
   title: string;
   uploader?: string;
   url: string;
+  thumbnail?: string;
   state: "queued" | "active" | "done" | "error";
   pct: number;
 }
@@ -148,6 +149,7 @@ interface CollectionItem {
   title: string;
   uploader?: string;
   url: string;
+  thumbnail?: string;
 }
 
 const state = {
@@ -196,7 +198,12 @@ function hashOf(str: string): number {
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
   return h;
 }
-function artFor(item: { title: string; uploader?: string }): string {
+/** Reduce la portada original de SoundCloud a un tamaño razonable para la UI. */
+function artworkUrl(url: string): string {
+  return url.replace(/-original\.(jpe?g|png|webp)$/i, "-t500x500.$1");
+}
+function artFor(item: { title: string; uploader?: string; thumbnail?: string }): string {
+  if (item.thumbnail) return artworkUrl(item.thumbnail);
   const key = (item.title || "") + "|" + (item.uploader || "");
   if (artCache[key]) return artCache[key];
   const h = hashOf(key);
@@ -940,7 +947,7 @@ async function queueTrack(item: CollectionItem): Promise<void> {
     toast(T("toast.queued"), "info");
     return;
   }
-  state.queue.push({ id: item.id, title: item.title, uploader: item.uploader, url: item.url, state: "queued", pct: 0 });
+  state.queue.push({ id: item.id, title: item.title, uploader: item.uploader, url: item.url, thumbnail: item.thumbnail, state: "queued", pct: 0 });
   toast(T("toast.queued"), "info");
   renderQueue();
   processQueue();

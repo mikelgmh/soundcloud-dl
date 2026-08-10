@@ -88,6 +88,8 @@ export interface LikedTrack {
   uploader?: string;
   /** Nombre del artista (puede diferir del subidor). */
   artist?: string;
+  /** URL de la portada de la canción. */
+  thumbnail?: string;
   index: number;
 }
 

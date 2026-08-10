@@ -44,6 +44,8 @@ export interface LikedTrackPayload {
   title: string;
   url: string;
   uploader?: string;
+  /** URL de la portada de la canción. */
+  thumbnail?: string;
   index: number;
 }
 
