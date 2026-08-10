@@ -159,7 +159,7 @@ const state = {
   deps: { ytdlp: null as null | { ok: boolean; own: boolean; ver: string; upd: boolean }, ffmpeg: null as null | { ok: boolean; own: boolean; ver: string } },
   config: null as ConfigPayload | null,
   likes: [] as CollectionItem[],
-  playlists: [] as { id: string; title: string; url: string; uploader?: string; count?: number }[],
+  playlists: [] as { id: string; title: string; url: string; uploader?: string; count?: number; thumbnail?: string }[],
   history: [] as { ts: number; target: string; format: string; ok: boolean }[],
   downloadedIds: new Set<string>(),
   queue: [] as QueueItem[],
@@ -522,11 +522,10 @@ function listOrGrid(items: CollectionItem[], mode: string): string {
     : items.map((l, i) => rowHtml(l, i + 1)).join("");
 }
 
-function playlistCardHtml(p: { title: string; uploader?: string; count?: number }, i: number): string {
-  const fake = { title: p.title, uploader: p.uploader };
+function playlistCardHtml(p: { title: string; uploader?: string; count?: number; thumbnail?: string }, i: number): string {
   return (
     '<div class="tile"><div class="tile-art">' +
-    artImg(fake, "tile-img") +
+    artImg(p, "tile-img") +
     '<span class="tile-flag">' + (p.count ?? "") + "</span>" +
     '<div class="tile-hover"><button class="btn-primary" data-open-playlist="' + i + '">' + T("col.open") + "</button></div>" +
     '</div><p class="tile-title">' + p.title + '</p><p class="tile-sub">' + (p.uploader || "") + "</p></div>"
@@ -582,7 +581,7 @@ function renderCollection(): void {
                 '<div class="row"><span class="row-num">' +
                 (idxOf(p) + 1) +
                 "</span>" +
-                artImg({ title: p.title, uploader: p.uploader }, "row-art") +
+                artImg(p, "row-art") +
                 '<div class="row-main"><p class="row-title">' +
                 p.title +
                 '</p><p class="row-sub">' +

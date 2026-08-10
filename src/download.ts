@@ -91,7 +91,7 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
 
 // ---- Likes vía API v2 (trae portadas reales) ----
 
-const API_UA =
+export const API_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 let apiClientId: string | null = null;
@@ -109,7 +109,7 @@ function persistClientId(cid: string): void {
 }
 
 /** Obtiene el client_id de SoundCloud: caché en disco, luego scraping web. */
-async function fetchSoundCloudClientId(): Promise<string> {
+export async function fetchSoundCloudClientId(): Promise<string> {
   if (apiClientId) return apiClientId;
   try {
     const cached = fs.readFileSync(CLIENT_ID_FILE, 'utf8').trim();
@@ -233,6 +233,52 @@ export async function searchTracksViaApi(
       thumbnail: t.artwork_url,
       index: i,
     }));
+}
+
+/** Lista las playlists/sets públicos del usuario vía API v2, con portada
+ * (la propia o, si no tiene, la de su primera canción, como hace SC). */
+export async function fetchPlaylistsViaApi(opts: {
+  username: string;
+}): Promise<
+  { id: string; title: string; url: string; uploader?: string; count?: number; thumbnail?: string }[]
+> {
+  const cid = await fetchSoundCloudClientId();
+  const headers: Record<string, string> = {
+    'User-Agent': API_UA,
+  };
+  const uid = await resolveUserId(opts.username, cid, headers);
+  if (!uid) throw new Error('SoundCloud API sin usuario');
+
+  const out: {
+    id: string;
+    title: string;
+    url: string;
+    uploader?: string;
+    count?: number;
+    thumbnail?: string;
+  }[] = [];
+  let url = `https://api-v2.soundcloud.com/users/${uid}/playlists?limit=200&client_id=${cid}`;
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`SoundCloud API ${res.status}`);
+    const j = await res.json();
+    for (const p of j?.collection ?? []) {
+      if (!p || p.kind !== 'playlist' || p.id == null) continue;
+      const firstTrack = (p.tracks ?? []).find((t: any) => t?.artwork_url);
+      out.push({
+        id: String(p.id),
+        title: p.title ?? '',
+        url: p.permalink_url ?? p.uri ?? '',
+        uploader: p.user?.username,
+        count: p.track_count ?? p.tracks?.length,
+        thumbnail: p.artwork_url ?? firstTrack?.artwork_url,
+      });
+    }
+    url = j?.next_href
+      ? String(j.next_href) + (String(j.next_href).includes('client_id') ? '' : `&client_id=${cid}`)
+      : '';
+  }
+  return out;
 }
 
 /** Lista las entradas planas (favoritos, sets o canciones de una playlist). */

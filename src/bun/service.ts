@@ -20,6 +20,7 @@ import {
   fetchFlatEntries,
   fetchLikes,
   fetchLikesViaApi,
+  fetchPlaylistsViaApi,
   searchTracksViaApi,
   findTrackFile,
   scanDownloadedAudio,
@@ -717,10 +718,20 @@ export class Service {
 
   /** Lista las playlists/sets del usuario. */
   async getPlaylists(): Promise<{
-    playlists: { id: string; title: string; url: string }[];
+    playlists: { id: string; title: string; url: string; uploader?: string; count?: number; thumbnail?: string }[];
   }> {
     const config = this.requireDownloadConfig();
     const deps = await this.ensureDepsReady();
+    // La API v2 trae la portada (la propia o la de la primera canción).
+    try {
+      const playlists = await fetchPlaylistsViaApi({ username: config.username! });
+      if (playlists.length) return { playlists };
+    } catch (err) {
+      this.emitter.log(
+        "warn",
+        `API v2 de playlists no disponible, usando yt-dlp: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     const { entries } = await fetchFlatEntries(
       `https://soundcloud.com/${config.username}/sets`,
       {
@@ -731,7 +742,13 @@ export class Service {
       },
     );
     return {
-      playlists: entries.map((e) => ({ id: e.id, title: e.title, url: e.url })),
+      playlists: entries.map((e) => ({
+        id: e.id,
+        title: e.title,
+        url: e.url,
+        uploader: e.uploader,
+        thumbnail: e.thumbnail,
+      })),
     };
   }
 

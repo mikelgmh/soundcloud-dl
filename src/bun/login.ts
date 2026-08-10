@@ -2,6 +2,7 @@ import { BrowserWindow, Session } from "electrobun/bun";
 import { sleep } from "../util";
 import type { LoginResultPayload } from "../shared/types";
 import { resolveLang, t, type Lang } from "../shared/i18n";
+import { fetchSoundCloudClientId, API_UA } from "../download";
 
 // Login con la webview nativa del sistema (WKWebView): sin Playwright, sin
 // señales de automatización. Se abre una ventana con SoundCloud, el usuario
@@ -56,6 +57,27 @@ export function clearSoundCloudSession(): void {
   }
 }
 
+/** ¿Es el token válido para la API v2? (Evita guardar el token temporal
+ * numérico que SoundCloud deja durante el login y luego reemplaza.) */
+async function isApiTokenValid(token: string): Promise<boolean> {
+  if (!OAUTH_TOKEN_RE.test(token)) return false;
+  try {
+    const cid = await fetchSoundCloudClientId();
+    const res = await fetch(
+      `https://api-v2.soundcloud.com/me?client_id=${cid}`,
+      {
+        headers: {
+          'User-Agent': API_UA,
+          Authorization: `OAuth ${token}`,
+        },
+      },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function loginWithElectrobunWindow(
   onStatus: (msg: string) => void,
   lang: Lang = resolveLang(),
@@ -104,8 +126,10 @@ export async function loginWithElectrobunWindow(
   }
 
   const deadline = Date.now() + LOGIN_TIMEOUT_MS;
+  const TOKEN_WAIT_MS = 30_000;
   let lastCheckedToken: string | null = null;
   let checkedInitial = false;
+  let tokenWaitStart: number | null = null;
 
   while (Date.now() < deadline) {
     if (closed) {
@@ -120,13 +144,28 @@ export async function loginWithElectrobunWindow(
       const v = await checkLoggedIn();
       checkedInitial = true;
       if (v.loggedIn) {
-        onStatus(t(lang, "login.verified"));
-        win.webview.loadURL(CONNECTING_URL);
-        await sleep(1200);
-        win.close();
-        return { oauthToken: token, username: v.username };
+        if (await isApiTokenValid(token)) {
+          onStatus(t(lang, "login.verified"));
+          win.webview.loadURL(CONNECTING_URL);
+          await sleep(1200);
+          win.close();
+          return { oauthToken: token, username: v.username };
+        }
+        // El token presente aún no es válido: SoundCloud puede estar
+        // sustituyendo la cookie temporal por la definitiva. Esperamos.
+        onStatus(t(lang, "login.verifyingToken"));
+        if (!tokenWaitStart) tokenWaitStart = Date.now();
+        else if (Date.now() - tokenWaitStart > TOKEN_WAIT_MS) {
+          // No llegó el token definitivo; aceptar el disponible (la API de
+          // favoritos ya no depende de él).
+          onStatus(t(lang, "login.verified"));
+          win.webview.loadURL(CONNECTING_URL);
+          await sleep(1200);
+          win.close();
+          return { oauthToken: token, username: v.username };
+        }
+        lastCheckedToken = token;
       }
-      lastCheckedToken = token;
     }
     await sleep(POLL_MS);
   }

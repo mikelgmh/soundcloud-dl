@@ -152,7 +152,16 @@ export type AppRPCSchema = {
       cleanupPreview: { params: {}; response: { count: number } };
       getPlaylists: {
         params: {};
-        response: { playlists: { id: string; title: string; url: string }[] };
+        response: {
+          playlists: {
+            id: string;
+            title: string;
+            url: string;
+            uploader?: string;
+            count?: number;
+            thumbnail?: string;
+          }[];
+        };
       };
       getPlaylistTracks: {
         params: { url: string };
