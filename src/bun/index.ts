@@ -31,6 +31,7 @@ const rpc = BrowserView.defineRPC<AppRPCSchema>({
       getConfig: async () => service.getConfig(),
       getAppInfo: async () => {
         const info = await Updater.getLocalInfo();
+        service.logVersion(info.version, info.channel);
         return service.getAppInfo({ version: info.version, channel: info.channel });
       },
       openExternal: async ({ url }) => ({ ok: Utils.openExternal(url) }),

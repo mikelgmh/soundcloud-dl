@@ -158,6 +158,7 @@ export class Service {
   /** Info de la app para la sección "Acerca de". La versión/canal se resuelve
    *  en el main (Updater.getLocalInfo) y se inyecta desde index.ts. */
   getAppInfo(opts?: { version?: string; channel?: string }): AppInfoPayload {
+    this.logVersion(opts?.version, opts?.channel);
     return {
       name: APP_NAME,
       version: opts?.version || "dev",
@@ -166,6 +167,11 @@ export class Service {
       license: "MIT",
       licenseUrl: LICENSE_URL,
     };
+  }
+
+  /** Registra en el log la versión de la app (para diagnosticar builds viejos). */
+  logVersion(version?: string, channel?: string): void {
+    this.emitter.log("info", `App v${version || "dev"} (${channel || "dev"})`);
   }
 
   private async getDepsStatus(): Promise<DepsStatus> {
