@@ -166,8 +166,12 @@ const state = {
   queue: [] as QueueItem[],
   qPage: 1,
   qPer: 6,
+  hPage: 1,
+  hPer: 6,
   downloading: false,
   paused: false,
+  batchMode: false,
+  batchFailed: false,
   curIdx: 0,
   tab: "likes",
   colMode: "grid",
@@ -446,18 +450,30 @@ function renderHistory(): void {
   const failed = state.history.filter((h) => !h.ok).length;
   $("#h-count").textContent = state.history.length + (failed ? " · " + failed + " ✗" : "");
   $("#btn-retry-failed").classList.toggle("hidden", !failed);
-  $("#history-list").innerHTML = state.history
-    .slice(0, 30)
+  const pages = Math.max(1, Math.ceil(state.history.length / state.hPer));
+  if (state.hPage > pages) state.hPage = pages;
+  setAnimatedText($("#h-page"), String(state.hPage));
+  setAnimatedText($("#h-pages"), String(pages));
+  const list = $("#history-list");
+  const items = state.history.slice((state.hPage - 1) * state.hPer, state.hPage * state.hPer);
+  if (!items.length) {
+    list.innerHTML = '<div class="empty"><p>' + T("dl.historyEmpty") + "</p></div>";
+    return;
+  }
+  list.innerHTML = items
     .map(
-      (h) =>
-        '<div class="row"><div class="row-main"><p class="row-title">' +
+      (h, i) =>
+        '<div class="row"><span class="row-num">' +
+        (state.hPage - 1) * state.hPer + i + 1 +
+        "</span>" +
+        '<div class="row-main"><p class="row-title">' +
         h.target +
         '</p><p class="row-sub">' +
         new Date(h.ts).toLocaleString() +
         " · " +
         h.format +
-        '</p></div><span class="text-xs ' +
-        (h.ok ? "text-emerald-400" : "text-red-400") +
+        '</p></div><span class="hist-badge ' +
+        (h.ok ? "text-emerald-400 border-emerald-400/50" : "text-red-400 border-red-400/50") +
         '">' +
         (h.ok ? "✓" : "✗") +
         "</span></div>",
@@ -968,17 +984,48 @@ async function startBatch(kind: "all" | "missing"): Promise<void> {
     toast("Ya hay una descarga en curso", "warn");
     return;
   }
+  // Puebla la cola con las pistas del lote para mostrarlas en la UI.
+  const tracks =
+    kind === "all"
+      ? state.likes
+      : state.likes.filter((l) => !isDownloaded(l.id));
+  if (!tracks.length) {
+    toast(T("dl.nothingMissing"), "warn");
+    return;
+  }
+  state.queue = tracks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    uploader: t.uploader,
+    url: t.url,
+    thumbnail: t.thumbnail,
+    state: "queued",
+    pct: 0,
+  }));
+  state.qPage = 1;
+  state.batchMode = true;
+  state.batchFailed = false;
+  renderQueue();
+  renderCollection();
   try {
     state.downloading = true;
     state.paused = false;
     $("#dl-active").classList.remove("hidden");
     renderSidebarState();
     const r = kind === "all" ? await api.request.downloadAll({}) : await api.request.downloadMissing({});
-    void r;
+    if (r.code !== 0) state.batchFailed = true;
   } catch (err) {
+    state.batchFailed = true;
     toast((err as Error).message, "error");
   } finally {
     endDownload();
+    // Las pistas que quedaron pendientes (no llegaron a "100%") son fallidas.
+    state.queue.forEach((q) => {
+      if (q.state !== "done") q.state = state.batchFailed ? "error" : "done";
+    });
+    state.batchFailed = false;
+    renderQueue();
+    renderCollection();
     await refreshDownloaded();
     await refreshSync();
     await loadHistory();
@@ -1052,6 +1099,7 @@ async function processQueue(): Promise<void> {
 function endDownload(): void {
   state.downloading = false;
   state.paused = false;
+  state.batchMode = false;
   currentDownloadUrl = null;
   $("#sb-dl-fill").style.width = "0%";
   $("#dl-active").classList.add("hidden");
@@ -1099,8 +1147,25 @@ function onProgress(p: DownloadProgressPayload): void {
   $("#cur-eta").textContent = p.eta ? "ETA " + p.eta : "ETA --:--";
   $("#cur-fill").style.width = Math.min(100, p.percent) + "%";
   setAnimatedText($("#cur-pct"), Math.round(p.percent) + "%");
-  const idx = p.current || state.queue.filter((q) => q.state === "active").length;
-  const total = p.total || state.queue.length || state.syncTotal;
+  let idx = 0;
+  let total = 0;
+  if (state.batchMode) {
+    // En un lote el servicio cuenta las canciones completadas (current) sobre
+    // el total esperado; se reflejan en la cola y en "Canción X de Y".
+    idx = p.current || 0;
+    total = p.total || state.queue.length || state.syncTotal;
+    if (p.current && state.queue.length) {
+      const pos = Math.min(p.current, state.queue.length);
+      state.queue.forEach((q, i) => {
+        if (i < pos - 1) q.state = "done";
+        else if (i === pos - 1) q.state = "active";
+      });
+    }
+  } else {
+    const activeIdx = state.queue.findIndex((q) => q.state === "active");
+    idx = activeIdx >= 0 ? activeIdx + 1 : 0;
+    total = state.queue.length || state.syncTotal;
+  }
   if (idx) setAnimatedText($("#cur-idx"), String(idx));
   if (total) setAnimatedText($("#cur-total"), String(total));
   // sidebar
@@ -1159,10 +1224,16 @@ document.addEventListener("click", (e) => {
 
   const pg = target.closest("[data-page]") as HTMLElement | null;
   if (pg) {
-    const delta = Number((pg.dataset.page || "").split(":")[1]);
-    const pages = Math.max(1, Math.ceil(state.queue.length / state.qPer));
-    state.qPage = Math.min(pages, Math.max(1, state.qPage + delta));
-    renderQueue();
+    const [scope, delta] = (pg.dataset.page || "queue:0").split(":");
+    if (scope === "history") {
+      const pages = Math.max(1, Math.ceil(state.history.length / state.hPer));
+      state.hPage = Math.min(pages, Math.max(1, state.hPage + Number(delta)));
+      renderHistory();
+    } else {
+      const pages = Math.max(1, Math.ceil(state.queue.length / state.qPer));
+      state.qPage = Math.min(pages, Math.max(1, state.qPage + Number(delta)));
+      renderQueue();
+    }
     return;
   }
 

@@ -609,6 +609,21 @@ kbd {
   margin-right: 0;
 }
 
+.hist-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  background: var(--field);
+}
+
 .drm-badge {
   position: absolute;
   top: 3px;

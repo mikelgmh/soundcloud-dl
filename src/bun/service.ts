@@ -81,6 +81,7 @@ const LEGACY_TEMPLATE = "%(uploader)s - %(title)s [%(id)s]";
 
 class DownloadTracker {
   private lastEmit = 0;
+  private completed = 0;
   private state: DownloadProgressPayload = {
     current: 0,
     total: 0,
@@ -88,16 +89,22 @@ class DownloadTracker {
     eta: "",
     title: "",
   };
-  constructor(private emit: (s: DownloadProgressPayload) => void) {}
+  constructor(
+    private emit: (s: DownloadProgressPayload) => void,
+    private total: number,
+  ) {}
 
   handle(line: string): void {
-    const item = line.match(/\[download\] Downloading item (\d+) of (\d+)/);
-    if (item) {
-      this.state.current = Number(item[1]);
-      this.state.total = Number(item[2]);
-      // Cada canción nueva empieza su propio progreso.
-      this.state.percent = 0;
-      this.state.eta = "";
+    // SoundCloud no emite "Downloading item X of Y": cada canción acaba con
+    // "[download] 100%" (o es saltada por el archivo de sincronización), así
+    // que el índice actual se cuenta a partir de las canciones completadas.
+    if (
+      /\[download\]\s+100%/.test(line) ||
+      /has already been downloaded/.test(line)
+    ) {
+      this.completed++;
+      this.state.current = this.completed;
+      this.state.total = this.total;
     }
     const pct = line.match(/\[download\]\s+([\d.]+)%/);
     if (pct) this.state.percent = parseFloat(pct[1]);
@@ -490,9 +497,11 @@ export class Service {
     const config = this.requireDownloadConfig();
     const outDir = config.outdir || DEFAULT_OUTDIR;
     fs.mkdirSync(outDir, { recursive: true });
+    const total = this.getLikesCache().tracks.length || 0;
     return this.runDownload(
       buildDownloadArgs(this.downloadOpts(config, outDir)),
       this.msg("dl.allFavorites"),
+      total,
     );
   }
 
@@ -519,6 +528,7 @@ export class Service {
         urls: missing.map((t) => t.url),
       }),
       this.msg("dl.downloadingMissing", { count: missing.length }),
+      missing.length,
     );
   }
 
@@ -530,6 +540,7 @@ export class Service {
     return this.runDownload(
       buildDownloadArgs({ ...this.downloadOpts(config, outDir), url }),
       this.msg("dl.downloadingTrack"),
+      1,
     );
   }
 
@@ -803,6 +814,7 @@ export class Service {
     return this.runDownload(
       buildDownloadArgs({ ...this.downloadOpts(config, outDir), urls: clean }),
       this.msg("dl.downloadingUrls", { count: clean.length }),
+      clean.length,
     );
   }
 
@@ -864,6 +876,7 @@ export class Service {
   private runDownload(
     args: string[],
     message: string,
+    total = 0,
   ): Promise<{ ok: boolean; code: number }> {
     return this.enqueueRun(async () => {
       const deps = await this.ensureDepsReady();
@@ -871,7 +884,7 @@ export class Service {
       this.emitter.status("download", message);
       this.abort = new AbortController();
       this.controller = { pause() {}, resume() {} };
-      const tracker = new DownloadTracker((p) => this.emitter.progress(p));
+      const tracker = new DownloadTracker((p) => this.emitter.progress(p), total);
       const tail: string[] = [];
       const pushTail = (line: string): void => {
         if (tail.push(line) > 40) tail.shift();

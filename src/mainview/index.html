@@ -175,7 +175,14 @@
             <div class="card">
               <div class="flex items-center justify-between gap-3">
                 <p class="label"><span data-i18n="dl.history">HISTORIAL DE DESCARGAS</span> <span id="h-count" class="count-badge"></span></p>
-                <button id="btn-retry-failed" class="btn-secondary hidden !px-3 !py-1 text-xs" data-action="retry-failed" data-i18n="dl.retryFailed">Reintentar fallidas</button>
+                <div class="flex items-center gap-2">
+                  <button id="btn-retry-failed" class="btn-secondary hidden !px-3 !py-1 text-xs" data-action="retry-failed" data-i18n="dl.retryFailed">Reintentar fallidas</button>
+                  <div class="flex items-center gap-1">
+                    <button class="pager" data-page="history:-1" aria-label="Página anterior historial">‹</button>
+                    <span class="px-1 font-mono text-xs text-[var(--text-dim)]"><span id="h-page">1</span> / <span id="h-pages">1</span></span>
+                    <button class="pager" data-page="history:1" aria-label="Página siguiente historial">›</button>
+                  </div>
+                </div>
               </div>
               <div id="history-list" class="mt-3"></div>
             </div>
