@@ -388,7 +388,6 @@ function renderSync(): void {
   setAnimatedText($("#missing-count"), String(missing));
   setAnimatedText($("#sync-done"), String(done));
   setAnimatedText($("#sync-total"), String(total));
-  setAnimatedText($("#sync-pct"), String(Math.round(total ? (done / total) * 100 : 0)));
   $("#sync-fill").style.width = (total ? (done / total) * 100 : 0) + "%";
   setAnimatedText($("#likes-count"), String(total || state.likes.length));
 }
