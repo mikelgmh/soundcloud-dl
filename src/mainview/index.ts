@@ -980,6 +980,7 @@ async function queueTrack(item: CollectionItem): Promise<void> {
   state.queue.push({ id: item.id, title: item.title, uploader: item.uploader, url: item.url, thumbnail: item.thumbnail, state: "queued", pct: 0 });
   toast(T("toast.queued"), "info");
   renderQueue();
+  renderCollection();
   processQueue();
 }
 

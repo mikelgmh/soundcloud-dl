@@ -19,6 +19,7 @@ import {
   downloadLikesStream,
   fetchFlatEntries,
   fetchLikes,
+  fetchLikesViaApi,
   findTrackFile,
   scanDownloadedAudio,
   trackHasDownloadedFile,
@@ -382,18 +383,25 @@ export class Service {
       throw new Error(this.msg("likes.loginFirst"));
     }
     this.emitter.status("likes", this.msg("likes.fetching"));
-    const result = await fetchLikes({
-      ytdlp: deps.ytdlp,
-      ffmpegDir: deps.ffmpegDir,
-      cookiesFile: writeCookiesFile(token),
-      username,
-    });
-    saveLikesCache(username, result.tracks);
-    if (result.tokenInvalid) {
-      this.emitter.log("warn", this.msg("likes.tokenWarn"));
+    let tracks: LikedTrack[] | null = null;
+    // La API v2 trae las portadas reales; si falla (anti-bot) se usa yt-dlp.
+    try {
+      tracks = await fetchLikesViaApi({ oauthToken: token });
+    } catch {
+      tracks = null;
     }
-    this.emitter.log("success", this.msg("likes.count", { count: result.tracks.length }));
-    return { tracks: result.tracks, tokenInvalid: result.tokenInvalid, count: result.tracks.length };
+    if (!tracks) {
+      const result = await fetchLikes({
+        ytdlp: deps.ytdlp,
+        ffmpegDir: deps.ffmpegDir,
+        cookiesFile: writeCookiesFile(token),
+        username,
+      });
+      tracks = result.tracks;
+    }
+    saveLikesCache(username, tracks);
+    this.emitter.log("success", this.msg("likes.count", { count: tracks.length }));
+    return { tracks, tokenInvalid: false, count: tracks.length };
   }
 
   getLikesCache(): { tracks: LikedTrack[]; cachedAt: number | null } {

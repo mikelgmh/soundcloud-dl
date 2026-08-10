@@ -88,6 +88,84 @@ export async function fetchLikes(opts: CountOptions): Promise<FetchResult> {
   return { tracks: res.entries, tokenInvalid: res.tokenInvalid };
 }
 
+// ---- Likes vía API v2 (trae portadas reales) ----
+
+const API_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+let apiClientId: string | null = null;
+
+/** Obtiene el client_id de la web de SoundCloud (igual que yt-dlp). */
+async function fetchSoundCloudClientId(): Promise<string> {
+  if (apiClientId) return apiClientId;
+  const res = await fetch('https://soundcloud.com/', { headers: { 'User-Agent': API_UA } });
+  const html = await res.text();
+  let cid = html.match(/client_id["']?\s*[:=]\s*["']([0-9a-zA-Z]{32})["']/)?.[1] ?? null;
+  if (!cid) {
+    const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+    for (const src of scripts) {
+      try {
+        const u = src.startsWith('http') ? src : `https://soundcloud.com${src}`;
+        const r = await fetch(u, { headers: { 'User-Agent': API_UA } });
+        const m = (await r.text()).match(/client_id\s*:\s*"([0-9a-zA-Z]{32})"/);
+        if (m) {
+          cid = m[1];
+          break;
+        }
+      } catch {
+        // siguiente script
+      }
+    }
+  }
+  if (!cid) throw new Error('No se pudo obtener el client_id de SoundCloud');
+  apiClientId = cid;
+  return cid;
+}
+
+/** Obtiene los favoritos con portada real (artwork_url) vía la API v2. */
+export async function fetchLikesViaApi(opts: {
+  oauthToken: string;
+}): Promise<LikedTrack[]> {
+  const cid = await fetchSoundCloudClientId();
+  const headers = {
+    'User-Agent': API_UA,
+    Authorization: `OAuth ${opts.oauthToken}`,
+  };
+  const meRes = await fetch(
+    `https://api-v2.soundcloud.com/me?client_id=${cid}`,
+    { headers },
+  );
+  if (!meRes.ok) throw new Error(`SoundCloud API ${meRes.status}`);
+  const me = await meRes.json();
+  const uid = me?.id;
+  if (!uid) throw new Error('SoundCloud API sin usuario');
+
+  const tracks: LikedTrack[] = [];
+  let url = `https://api-v2.soundcloud.com/users/${uid}/likes?limit=200&client_id=${cid}`;
+  while (url) {
+    const res = await fetch(url, { headers });
+    if (!res.ok) throw new Error(`SoundCloud API ${res.status}`);
+    const j = await res.json();
+    const items: any[] = (j?.collection ?? []).map((c: any) => c?.track || c);
+    for (const t of items) {
+      if (!t || t.id == null) continue;
+      tracks.push({
+        id: String(t.id),
+        title: t.title ?? '',
+        url: t.permalink_url ?? t.uri ?? '',
+        uploader: t.user?.username,
+        artist: t.user?.username,
+        thumbnail: t.artwork_url,
+        index: tracks.length,
+      });
+    }
+    url = j?.next_href
+      ? String(j.next_href) + (String(j.next_href).includes('client_id') ? '' : `&client_id=${cid}`)
+      : '';
+  }
+  return tracks;
+}
+
 /** Lista las entradas planas (favoritos, sets o canciones de una playlist). */
 export async function fetchFlatEntries(
   url: string,
