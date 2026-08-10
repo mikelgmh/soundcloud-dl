@@ -1162,18 +1162,24 @@ document.addEventListener("click", (e) => {
     if (p) {
       state.openPlaylist = p;
       state.playlistTracks = [];
+      state.colLoading = true;
       renderCollection();
       if (isApp) {
         api.request
           .getPlaylistTracks({ url: p.url })
           .then((r: { tracks: LikedTrackPayload[]; tokenInvalid: boolean }) => {
             state.playlistTracks = r.tracks as unknown as CollectionItem[];
+            state.colLoading = false;
             renderCollection();
           })
           .catch(() => {
             state.playlistTracks = [];
+            state.colLoading = false;
             renderCollection();
           });
+      } else {
+        state.colLoading = false;
+        renderCollection();
       }
     }
     return;
