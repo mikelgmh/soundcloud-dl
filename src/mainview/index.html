@@ -131,63 +131,81 @@
               <p class="view-sub" data-i18n="dl.sub">Sincroniza tus favoritos con la carpeta local</p>
             </div>
 
-            <div class="card">
-              <p class="label" data-i18n="dl.sync">SINCRONIZACIÓN</p>
-              <p id="sync-state" class="mt-2 font-display text-lg odometer" data-i18n="dl.calculating">Calculando...</p>
-              <div class="mt-4 flex flex-wrap gap-2">
-                <button class="btn-primary" data-action="download-missing"><span data-i18n="dl.missing">Descargar faltantes</span> (<span id="missing-count">0</span>)</button>
-                <button class="btn-secondary" data-action="download-all" data-i18n="common.downloadAll">Descargar todo</button>
-                <button class="btn-danger" data-modal-open="purge" data-i18n="dl.purge">Limpiar no favoritos</button>
-              </div>
-              <div class="progress-track mt-5"><div id="sync-fill" class="progress-fill" style="width:0%"></div></div>
-              <p class="mt-2 text-xs text-[var(--text-dim)]"><span id="sync-done">0</span> <span data-i18n="dl.ofDownloaded">de</span> <span id="sync-total">0</span> <span data-i18n="dl.downloadedWord">descargadas</span></p>
-            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-            <div id="dl-active" class="card hidden">
-              <p class="label" data-i18n="dl.current">DESCARGA ACTUAL</p>
-              <div class="mt-2 flex items-baseline justify-between gap-4">
-                <p id="cur-title" class="truncate font-medium">—</p>
-                <p id="cur-eta" class="shrink-0 font-mono text-xs text-[var(--text-dim)]">ETA --:--</p>
-              </div>
-              <div class="progress-track mt-3"><div id="cur-fill" class="progress-fill" style="width:0%"></div></div>
-              <div class="mt-2 flex items-center justify-between text-xs text-[var(--text-dim)]">
-                <span><span data-i18n="dl.song">Canción</span> <span id="cur-idx">0</span> <span data-i18n="dl.of">de</span> <span id="cur-total">0</span></span>
-                <span id="cur-pct" class="font-mono">0%</span>
-              </div>
-              <div class="mt-4 flex gap-2">
-                <button id="btn-pause" class="btn-secondary" data-action="pause" data-i18n="dl.pause">Pausar</button>
-                <button class="btn-danger" data-action="stop" data-i18n="dl.stop">Detener</button>
-              </div>
-            </div>
-
-            <div class="card">
-              <div class="flex items-center justify-between gap-3">
-                <p class="label"><span data-i18n="dl.queue">COLA DE DESCARGAS</span> <span id="q-count" class="count-badge"></span></p>
-                <div class="flex items-center gap-1">
-                  <button class="pager" data-page="queue:-1" aria-label="Página anterior">‹</button>
-                  <span class="px-1 font-mono text-xs text-[var(--text-dim)]"><span id="q-page">1</span> / <span id="q-pages">1</span></span>
-                  <button class="pager" data-page="queue:1" aria-label="Página siguiente">›</button>
+              <!-- Sincronización (izquierda, 2 columnas) -->
+              <div class="card relative overflow-hidden lg:col-span-2">
+                <div class="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full opacity-[0.06] blur-[80px]" style="background:var(--brand-500)"></div>
+                <div class="flex items-center justify-between">
+                  <p class="label" data-i18n="dl.sync">SINCRONIZACIÓN</p>
+                  <span class="chip chip-muted"><span id="sync-done">0</span> / <span id="sync-total">0</span></span>
+                </div>
+                <p id="sync-state" class="mt-2 font-display text-lg odometer" data-i18n="dl.calculating">Calculando...</p>
+                <div class="mt-6">
+                  <div class="mb-1 flex justify-between font-mono text-xs">
+                    <span class="text-[var(--text-dim)]" data-i18n="dl.overall">Progreso total</span>
+                    <span class="text-[var(--brand-500)]"><span id="sync-pct">0</span>%</span>
+                  </div>
+                  <div class="progress-track"><div id="sync-fill" class="progress-fill" style="width:0%"></div></div>
+                </div>
+                <div class="mt-6 flex flex-wrap gap-2">
+                  <button class="btn-primary" data-action="download-missing"><span data-i18n="dl.missing">Descargar faltantes</span> (<span id="missing-count">0</span>)</button>
+                  <button class="btn-secondary" data-action="download-all" data-i18n="common.downloadAll">Descargar todo</button>
+                  <button class="btn-danger lg:ml-auto" data-modal-open="purge" data-i18n="dl.purge">Limpiar no favoritos</button>
                 </div>
               </div>
-              <div id="queue-list" class="mt-3"></div>
-            </div>
 
-            <div class="card">
-              <div class="flex items-center justify-between gap-3">
-                <p class="label"><span data-i18n="dl.history">HISTORIAL DE DESCARGAS</span> <span id="h-count" class="count-badge"></span></p>
-                <div class="flex items-center gap-2">
-                  <button id="btn-retry-failed" class="btn-secondary hidden !px-3 !py-1 text-xs" data-action="retry-failed" data-i18n="dl.retryFailed">Reintentar fallidas</button>
+              <!-- Descarga actual (derecha, arriba) -->
+              <div id="dl-active" class="card relative hidden border-l-2" style="border-left-color:var(--brand-500)">
+                <div class="flex items-center justify-between">
+                  <span class="chip" style="border:1px solid color-mix(in srgb, var(--brand-500) 55%, transparent);color:var(--brand-500)" data-i18n="dl.active">EN CURSO</span>
+                  <p id="cur-eta" class="font-mono text-xs text-[var(--text-dim)]">ETA --:--</p>
+                </div>
+                <p id="cur-title" class="mt-3 truncate font-display text-lg font-semibold">—</p>
+                <p class="mt-1 text-xs text-[var(--text-dim)]"><span data-i18n="dl.song">Canción</span> <span id="cur-idx">0</span> <span data-i18n="dl.of">de</span> <span id="cur-total">0</span></p>
+                <div class="mt-5">
+                  <div class="mb-1 flex justify-between font-mono text-xs">
+                    <span class="text-[var(--brand-500)]"><span id="cur-pct">0</span>%</span>
+                    <span class="text-[var(--text-dim)]" data-i18n="dl.downloading">descargando</span>
+                  </div>
+                  <div class="progress-track"><div id="cur-fill" class="progress-fill" style="width:0%"></div></div>
+                </div>
+                <div class="mt-5 flex gap-2">
+                  <button id="btn-pause" class="btn-secondary flex-1" data-action="pause" data-i18n="dl.pause">Pausar</button>
+                  <button class="btn-danger flex-1" data-action="stop" data-i18n="dl.stop">Detener</button>
+                </div>
+              </div>
+
+              <!-- Cola (izquierda/medio, 2 columnas) -->
+              <div class="card flex h-80 flex-col p-0 lg:col-span-2">
+                <div class="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+                  <p class="label"><span data-i18n="dl.queue">COLA DE DESCARGAS</span> <span id="q-count" class="count-badge"></span></p>
                   <div class="flex items-center gap-1">
+                    <button class="pager" data-page="queue:-1" aria-label="Página anterior cola">‹</button>
+                    <span class="px-1 font-mono text-xs text-[var(--text-dim)]"><span id="q-page">1</span> / <span id="q-pages">1</span></span>
+                    <button class="pager" data-page="queue:1" aria-label="Página siguiente cola">›</button>
+                  </div>
+                </div>
+                <div id="queue-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
+              </div>
+
+              <!-- Historial (derecha, abajo) -->
+              <div class="card flex h-80 flex-col p-0">
+                <div class="flex items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
+                  <p class="label"><span data-i18n="dl.history">HISTORIAL</span> <span id="h-count" class="count-badge"></span></p>
+                  <div class="flex items-center gap-1">
+                    <button id="btn-retry-failed" class="btn-secondary hidden !px-2 !py-0.5 text-xs" data-action="retry-failed" data-i18n="dl.retryFailed">Reintentar fallidas</button>
                     <button class="pager" data-page="history:-1" aria-label="Página anterior historial">‹</button>
                     <span class="px-1 font-mono text-xs text-[var(--text-dim)]"><span id="h-page">1</span> / <span id="h-pages">1</span></span>
                     <button class="pager" data-page="history:1" aria-label="Página siguiente historial">›</button>
                   </div>
                 </div>
+                <div id="history-list" class="flex-1 overflow-y-auto px-2 py-2"></div>
               </div>
-              <div id="history-list" class="mt-3"></div>
-            </div>
 
+            </div>
           </section>
+
 
           <!-- ---------- C) BUSCAR ---------- -->
           <section data-view="search" class="hidden space-y-5">
