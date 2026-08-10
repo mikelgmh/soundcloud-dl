@@ -65,6 +65,7 @@ aside {
 }
 
 /* ---------- nav ---------- */
+@layer components {
 .nav-item {
   position: relative;
   display: flex;
@@ -713,4 +714,5 @@ kbd {
 }
 .tile.is-done .tile-title {
   color: var(--text-dim);
+}
 }
