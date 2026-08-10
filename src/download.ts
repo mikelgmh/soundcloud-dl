@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { run, runStream } from './util';
 import type { LikedTrack } from './store';
+import { SND_DIR } from './store';
 import { resolveLang, t, type Lang } from './shared/i18n';
 
 export interface Session {
@@ -94,32 +95,61 @@ const API_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 
 let apiClientId: string | null = null;
+// Respaldo si el scraping falla (client_ids rotan pero duran bastante).
+const FALLBACK_CLIENT_ID = 'TwElDfIgW9RpAzLMUSy9g1VvI2Kao7my';
+const CLIENT_ID_FILE = path.join(SND_DIR, 'client_id.txt');
 
-/** Obtiene el client_id de la web de SoundCloud (igual que yt-dlp). */
+function persistClientId(cid: string): void {
+  try {
+    fs.mkdirSync(SND_DIR, { recursive: true });
+    fs.writeFileSync(CLIENT_ID_FILE, cid, { mode: 0o600 });
+  } catch {
+    // no crítico
+  }
+}
+
+/** Obtiene el client_id de SoundCloud: caché en disco, luego scraping web. */
 async function fetchSoundCloudClientId(): Promise<string> {
   if (apiClientId) return apiClientId;
-  const res = await fetch('https://soundcloud.com/', { headers: { 'User-Agent': API_UA } });
-  const html = await res.text();
-  let cid = html.match(/client_id["']?\s*[:=]\s*["']([0-9a-zA-Z]{32})["']/)?.[1] ?? null;
-  if (!cid) {
-    const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
-    for (const src of scripts) {
-      try {
-        const u = src.startsWith('http') ? src : `https://soundcloud.com${src}`;
-        const r = await fetch(u, { headers: { 'User-Agent': API_UA } });
-        const m = (await r.text()).match(/client_id\s*:\s*"([0-9a-zA-Z]{32})"/);
-        if (m) {
-          cid = m[1];
-          break;
+  try {
+    const cached = fs.readFileSync(CLIENT_ID_FILE, 'utf8').trim();
+    if (cached) {
+      apiClientId = cached;
+      return cached;
+    }
+  } catch {
+    // sin caché todavía
+  }
+  try {
+    const res = await fetch('https://soundcloud.com/', { headers: { 'User-Agent': API_UA } });
+    const html = await res.text();
+    let cid = html.match(/client_id["']?\s*[:=]\s*["']([0-9a-zA-Z]{32})["']/)?.[1] ?? null;
+    if (!cid) {
+      const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+      for (const src of scripts) {
+        try {
+          const u = src.startsWith('http') ? src : `https://soundcloud.com${src}`;
+          const r = await fetch(u, { headers: { 'User-Agent': API_UA } });
+          const m = (await r.text()).match(/client_id\s*:\s*"([0-9a-zA-Z]{32})"/);
+          if (m) {
+            cid = m[1];
+            break;
+          }
+        } catch {
+          // siguiente script
         }
-      } catch {
-        // siguiente script
       }
     }
+    if (cid) {
+      apiClientId = cid;
+      persistClientId(cid);
+      return cid;
+    }
+  } catch {
+    // se cae al respaldo
   }
-  if (!cid) throw new Error('No se pudo obtener el client_id de SoundCloud');
-  apiClientId = cid;
-  return cid;
+  apiClientId = FALLBACK_CLIENT_ID;
+  return FALLBACK_CLIENT_ID;
 }
 
 /** Obtiene los favoritos con portada real (artwork_url) vía la API v2. */

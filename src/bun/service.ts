@@ -387,7 +387,12 @@ export class Service {
     // La API v2 trae las portadas reales; si falla (anti-bot) se usa yt-dlp.
     try {
       tracks = await fetchLikesViaApi({ oauthToken: token });
-    } catch {
+      if (!tracks.length) tracks = null;
+    } catch (err) {
+      this.emitter.log(
+        "warn",
+        `API v2 de favoritos no disponible, usando yt-dlp: ${err instanceof Error ? err.message : String(err)}`,
+      );
       tracks = null;
     }
     if (!tracks) {
