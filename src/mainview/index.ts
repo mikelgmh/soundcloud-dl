@@ -230,12 +230,22 @@ function artFor(item: { title: string; uploader?: string; thumbnail?: string }):
   }
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="' + a + '"/>' + shapes + "</svg>";
-  const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  // base64: más compatible con WebKit (el webview de la app) que data:...;utf8.
+  const url = "data:image/svg+xml;base64," + btoa(svg);
   artCache[key] = url;
   return url;
 }
-function artImg(item: { title: string; uploader?: string }, cls: string): string {
-  return '<img src="' + artFor(item) + '" alt="" aria-hidden="true" class="' + cls + '" loading="lazy" />';
+function artImg(item: { title: string; uploader?: string; thumbnail?: string }, cls: string): string {
+  const fallback = artFor({ title: item.title, uploader: item.uploader });
+  return (
+    '<img src="' +
+    artFor(item) +
+    '" onerror="this.onerror=null;this.src=\'' +
+    fallback +
+    '\'" alt="" aria-hidden="true" class="' +
+    cls +
+    '" loading="lazy" />'
+  );
 }
 
 // ================= log =================
