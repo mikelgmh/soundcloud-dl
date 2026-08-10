@@ -196,6 +196,34 @@ export async function fetchLikesViaApi(opts: {
   return tracks;
 }
 
+/** Busca canciones en la API v2 de SoundCloud (con portadas reales). */
+export async function searchTracksViaApi(
+  query: string,
+  oauthToken?: string,
+): Promise<LikedTrack[]> {
+  const cid = await fetchSoundCloudClientId();
+  const headers: Record<string, string> = { 'User-Agent': API_UA };
+  if (oauthToken) headers.Authorization = `OAuth ${oauthToken}`;
+  const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(
+    query,
+  )}&limit=20&client_id=${cid}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`SoundCloud API ${res.status}`);
+  const j = await res.json();
+  const items: any[] = j?.collection ?? [];
+  return items
+    .filter((t: any) => t?.id != null && t.kind === 'track')
+    .map((t: any, i: number) => ({
+      id: String(t.id),
+      title: t.title ?? '',
+      url: t.permalink_url ?? t.uri ?? '',
+      uploader: t.user?.username,
+      artist: t.user?.username,
+      thumbnail: t.artwork_url,
+      index: i,
+    }));
+}
+
 /** Lista las entradas planas (favoritos, sets o canciones de una playlist). */
 export async function fetchFlatEntries(
   url: string,
@@ -441,7 +469,22 @@ export function findTrackFile(
     if (fs.existsSync(p)) return p;
   }
   // Fallback por id en el nombre del fichero (plantillas sin id).
-  return findFileByTrackId(outDir, track.id);
+  const byId = findFileByTrackId(outDir, track.id);
+  if (byId) return byId;
+  // Fallback por prefijo del título (cubre plantillas antiguas sin id y
+  // artist != uploader).
+  const title = track.title?.trim();
+  if (title) {
+    const files = scanDownloadedAudioWithPaths(outDir);
+    for (const f of files) {
+      const stem = f.slice(0, -(path.extname(f).length));
+      const base = path.basename(stem);
+      if (base === title || base.startsWith(`${title} - `) || base.startsWith(`${title}-`)) {
+        return f;
+      }
+    }
+  }
+  return null;
 }
 
 /** Busca un fichero de audio cuyo nombre contenga [<trackId>]. */

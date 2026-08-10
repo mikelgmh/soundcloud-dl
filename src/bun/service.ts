@@ -20,6 +20,7 @@ import {
   fetchFlatEntries,
   fetchLikes,
   fetchLikesViaApi,
+  searchTracksViaApi,
   findTrackFile,
   scanDownloadedAudio,
   trackHasDownloadedFile,
@@ -750,6 +751,16 @@ export class Service {
     const config = this.requireDownloadConfig();
     const deps = await this.ensureDepsReady();
     this.emitter.status("likes", this.msg("search.searching", { query: q }));
+    // La API v2 trae portadas; si falla (anti-bot) se usa yt-dlp.
+    try {
+      const tracks = await searchTracksViaApi(q, config.oauthToken);
+      if (tracks.length) return { tracks };
+    } catch (err) {
+      this.emitter.log(
+        "warn",
+        `API búsqueda no disponible, usando yt-dlp: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     const { entries } = await fetchFlatEntries(`scsearch20:${q}`, {
       ytdlp: deps.ytdlp,
       ffmpegDir: deps.ffmpegDir,

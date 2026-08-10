@@ -384,7 +384,8 @@ function queueStatusHtml(item: QueueItem): string {
     return (
       '<span class="flex items-center gap-2 text-xs text-emerald-400">✓ ' +
       T("q.done") +
-      '<button class="pager" data-open-folder="' + item.id + '" title="Abrir carpeta">📁</button></span>'
+      '<button class="pager" data-open-folder="' + item.id + '" title="' + T("queue.openFolder") + '">' +
+      '<svg viewBox="0 0 24 24" class="nav-ico"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M3 11h18"/></svg></button></span>'
     );
   if (item.state === "error") return '<span class="text-xs text-red-400">' + T("q.error") + "</span>";
   if (item.state === "active")
@@ -1216,7 +1217,7 @@ document.addEventListener("click", (e) => {
     const item = state.queue.find((q) => q.id === id);
     if (item && isApp) {
       api.request.showDownloadedItem({ id: item.id, title: item.title }).then((r: { ok: boolean }) => {
-        if (!r.ok) toast(T("toast.opened"), "info");
+        toast(r.ok ? T("toast.opened") : T("toast.notFound"), r.ok ? "info" : "error");
       });
     }
     return;
