@@ -3,34 +3,48 @@ import type {
   AppRPCSchema,
   ConfigPayload,
   DepsStatus,
-  DepVersionInfo,
   DownloadProgressPayload,
-  HistoryItemPayload,
   LikedTrackPayload,
   LogLevel,
   StatusSnapshot,
 } from "../shared/types";
 import {
-  LANG_LABELS,
+  detectSystemLang,
+  normalizeLang,
   resolveLang,
-  SUPPORTED_LANGS,
   t,
   type Lang,
-  type Vars,
 } from "../shared/i18n";
 
-// ---- Internacionalización ----
-let currentLang: Lang = resolveLang();
-/** true cuando el usuario cambia el idioma a mano; evita que seedSettings lo
- *  revierta al idioma guardado en la config antes de pulsar "Guardar". */
-let langUserSet = false;
+let api: AppRPCSchema extends never ? never : any = null;
+let isApp = false;
 
-/** Traduce con la lengua activa (shortcut). */
-function T(key: string, vars?: Vars): string {
+try {
+  const rpc = Electroview.defineRPC<AppRPCSchema>({
+    maxRequestTime: Infinity,
+    handlers: {
+      requests: {},
+      messages: {
+        log: ({ level, text }) => onLog(level, text),
+        status: ({ stage, message }) => onStatus(stage, message),
+        downloadProgress: (p) => onProgress(p),
+      },
+    },
+  });
+  const eb = new Electroview({ rpc });
+  api = eb.rpc;
+  isApp = true;
+} catch {
+  isApp = false;
+}
+
+// ================= i18n =================
+let currentLang: Lang = normalizeLang(detectSystemLang());
+
+function T(key: string, vars?: Record<string, string | number>): string {
   return t(currentLang, key, vars);
 }
 
-/** Aplica las traducciones a los elementos estáticos del DOM. */
 function applyStaticTranslations(): void {
   document.documentElement.lang = currentLang;
   for (const el of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
@@ -39,2076 +53,1468 @@ function applyStaticTranslations(): void {
   for (const el of document.querySelectorAll<HTMLElement>("[data-i18n-ph]")) {
     el.setAttribute("placeholder", T(el.dataset.i18nPh!));
   }
-  for (const el of document.querySelectorAll<HTMLElement>("[data-i18n-title]")) {
-    el.setAttribute("title", T(el.dataset.i18nTitle!));
-  }
+  renderAll();
 }
 
-/** Cambia la lengua activa. Con reRender=true (solo cambio de usuario) se
- *  re-renderiza la interfaz dinámica. seedSettings la llama con false para
- *  evitar recursión con loadStatus. */
-function setLang(lang: Lang, reRender = false): void {
+function setLang(lang: Lang): void {
   currentLang = lang;
+  document.documentElement.lang = lang;
   applyStaticTranslations();
-  renderLanguageSelect();
-  if (reRender && isApp) {
-    loadStatus();
-    renderSyncStats();
-    renderHistory();
-    renderQueue();
-    renderStats();
-    renderCollection();
-    refreshDownloadedIds();
-  }
 }
 
-let api: AppRPCSchema extends never ? never : any = null;
+// ================= dom helpers =================
+const $ = <T extends HTMLElement>(sel: string, root?: ParentNode): T =>
+  ((root || document).querySelector(sel) as T) || (null as unknown as T);
+const $$ = (sel: string, root?: ParentNode): HTMLElement[] =>
+  Array.from((root || document).querySelectorAll(sel));
 
-try {
-  const rpc = Electroview.defineRPC<AppRPCSchema>({
-    // Las operaciones largas (instalar deps, login, descargas) no deben
-    // agotar el timeout por defecto de 1000ms.
-    maxRequestTime: Infinity,
-    handlers: {
-      requests: {},
-      messages: {
-        log: ({ level, text }) => appendLog(level, text),
-        status: ({ stage, message }) => updateStatus(stage, message),
-        downloadProgress: (p) => updateProgress(p),
-      },
-    },
-  });
-  const eb = new Electroview({ rpc });
-  api = eb.rpc;
-} catch (err) {
-  console.warn("Puente electrobun no disponible:", err);
-}
-
-const $ = <T extends HTMLElement>(id: string): T =>
-  document.getElementById(id) as T;
-
-// ---- Texto animado (efecto odómetro por dígito) ----
-const ODOMETER_ANIM = 300;
-
-/** Lee el texto lógico actual (textos + celdas de dígito). */
-function getOdometerText(el: HTMLElement): string {
-  let out = "";
-  for (const node of el.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out += node.textContent ?? "";
-    } else if (node instanceof HTMLElement) {
-      out += node.dataset.ch ?? node.textContent ?? "";
-    }
-  }
-  return out;
-}
-
-/** Celda de un carácter: solo anima si cambia el carácter. */
-function makeOdigitCell(oldChar: string, newChar: string): HTMLElement {
-  const cell = document.createElement("span");
-  cell.className = "odigit";
-  cell.dataset.ch = newChar;
-
-  if (!oldChar) {
-    // Solo entra el carácter nuevo (desde abajo).
-    const inner = document.createElement("span");
-    inner.className = "slide-in-up";
-    inner.textContent = newChar;
-    cell.appendChild(inner);
-    setTimeout(() => {
-      inner.classList.remove("slide-in-up");
-      inner.style.position = "relative";
-    }, ODOMETER_ANIM);
-    return cell;
-  }
-
-  // El anterior sale hacia arriba.
-  const oldS = document.createElement("span");
-  oldS.className = "slide-out-up";
-  oldS.textContent = oldChar;
-  cell.appendChild(oldS);
-
-  if (newChar) {
-    // El nuevo entra desde abajo.
-    const newS = document.createElement("span");
-    newS.className = "slide-in-up";
-    newS.style.position = "absolute";
-    newS.style.top = "0";
-    newS.style.left = "0";
-    newS.textContent = newChar;
-    cell.appendChild(newS);
-    setTimeout(() => {
-      oldS.remove();
-      newS.classList.remove("slide-in-up");
-      newS.style.position = "relative";
-    }, ODOMETER_ANIM);
-  } else {
-    setTimeout(() => cell.remove(), ODOMETER_ANIM);
-  }
-  return cell;
-}
-
-function setAnimatedText(el: HTMLElement, newText: string): void {
-  const oldText = getOdometerText(el);
-  if (oldText === newText) return;
-
+// ================= odometer =================
+function setAnimatedText(el: HTMLElement | null, text: string | number): void {
+  if (!el) return;
+  const next = String(text);
+  if (el.dataset.odoValue === next) return;
+  const prev = el.dataset.odoValue || "";
+  el.dataset.odoValue = next;
   el.textContent = "";
-  const len = Math.max(oldText.length, newText.length);
-  for (let i = 0; i < len; i++) {
-    const oc = oldText[i] ?? "";
-    const nc = newText[i] ?? "";
-    if (oc === nc) {
-      // El carácter no cambia: texto estático, sin animación.
-      el.appendChild(document.createTextNode(oc));
-    } else {
-      el.appendChild(makeOdigitCell(oc, nc));
+  next.split("").forEach((rawCh, i) => {
+    const ch = rawCh === " " ? "\u00a0" : rawCh;
+    const span = document.createElement("span");
+    span.className = "odo-digit";
+    const inner = document.createElement("span");
+    inner.textContent = ch;
+    if (prev[i] !== rawCh) {
+      inner.className = "odo-roll";
+      inner.style.animationDelay = i * 28 + "ms";
     }
-  }
+    span.appendChild(inner);
+    el.appendChild(span);
+  });
 }
 
-const isApp = !!api;
+// ================= toasts =================
+const TOAST_COLORS: Record<LogLevel, string> = {
+  success: "#22c55e",
+  error: "#ef4444",
+  warn: "#f59e0b",
+  info: "#ff5500",
+};
 
-// ---- Cola de descargas ----
+function toast(
+  msg: string,
+  kind: LogLevel = "info",
+  persistent = false,
+  action?: { label: string; run: () => void },
+): void {
+  const host = $("#toasts");
+  if (!host) return;
+  while (host.children.length >= 4) host.firstChild!.remove();
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.setAttribute("role", kind === "error" ? "alert" : "status");
+  el.innerHTML =
+    '<span class="toast-bar" style="background:' +
+    TOAST_COLORS[kind] +
+    '"></span><span class="flex-1 leading-snug"><span data-msg></span></span>' +
+    '<button class="toast-close" aria-label="Cerrar aviso">\u00d7</button>';
+  el.querySelector("[data-msg]")!.textContent = msg;
+  if (action) {
+    const a = document.createElement("button");
+    a.className = "toast-action mt-1 block text-xs";
+    a.textContent = action.label;
+    a.addEventListener("click", () => {
+      action.run();
+      el.remove();
+    });
+    el.querySelector(".flex-1")!.appendChild(a);
+  }
+  el.querySelector(".toast-close")!.addEventListener("click", () => el.remove());
+  host.appendChild(el);
+  if (!persistent) setTimeout(() => el.remove(), action ? 6000 : 3800);
+  return el as unknown as void;
+}
+
+// ================= estado =================
 interface QueueItem {
   id: string;
-  url: string;
   title: string;
-  status: "queued" | "downloading" | "done" | "error";
-  percent: number;
-  button: HTMLButtonElement | null;
-}
-let downloadQueue: QueueItem[] = [];
-let processingQueue = false;
-let currentQueueItem: QueueItem | null = null;
-
-// Canciones ya descargadas (archivo de sincronización) y sus botones.
-let downloadedIds = new Set<string>();
-const downloadButtons = new Map<string, HTMLButtonElement>();
-
-/** Muestra en Ajustes la calidad de descarga disponible de la cuenta. */
-async function renderStreamingQualityStatus(): Promise<void> {
-  const dot = $<HTMLElement>("quality-status-dot");
-  const text = $<HTMLElement>("quality-status-text");
-  const hint = $<HTMLElement>("quality-status-hint");
-  if (!isApp) {
-    dot.className = "w-2 h-2 rounded-full bg-ink-600";
-    text.textContent = T("quality.unknown");
-    hint.textContent = T("quality.statusHint");
-    return;
-  }
-  try {
-    const r = await api.request.checkStreamingQuality({});
-    if (!r.checked) {
-      dot.className = "w-2 h-2 rounded-full bg-ink-600";
-      text.textContent = T("quality.unknown");
-      hint.textContent = r.error ?? "";
-    } else if (r.highQuality) {
-      dot.className = "w-2 h-2 rounded-full bg-emerald-400";
-      text.textContent = T("quality.high");
-      hint.textContent = T("quality.statusHint");
-    } else {
-      dot.className = "w-2 h-2 rounded-full bg-amber-400";
-      text.textContent = T("quality.standard");
-      hint.textContent = T("quality.statusHint");
-    }
-  } catch {
-    dot.className = "w-2 h-2 rounded-full bg-ink-600";
-    text.textContent = T("quality.unknown");
-    hint.textContent = "";
-  }
+  uploader?: string;
+  url: string;
+  state: "queued" | "active" | "done" | "error";
+  pct: number;
 }
 
-$<HTMLButtonElement>("btn-quality-check").addEventListener("click", () =>
-  withBusy("btn-quality-check", renderStreamingQualityStatus),
-);
-
-// ---- Toasts ----
-function toast(
-  message: string,
-  level: LogLevel = "info",
-  persistent = false,
-  duration = 4200,
-): void {
-  const root = $<HTMLDivElement>("toast-root");
-  const el = document.createElement("div");
-  const accent =
-    level === "error"
-      ? "border-red-500/40"
-      : level === "warn"
-        ? "border-amber-400/40"
-        : level === "success"
-          ? "border-emerald-400/40"
-          : "border-ink-700";
-  const iconColor =
-    level === "error"
-      ? "text-red-400"
-      : level === "warn"
-        ? "text-amber-300"
-        : level === "success"
-          ? "text-emerald-400"
-          : "text-brand-400";
-  const icon =
-    level === "error"
-      ? "M12 9v4m0 3h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
-      : level === "warn"
-        ? "M12 9v4m0 3h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
-        : level === "success"
-          ? "m5 13 4 4L19 7"
-          : "M13 2 4.5 13.5H11L9.5 22 19 10.5h-6.5L13 2Z";
-
-  el.className = `toast pointer-events-auto flex items-start gap-3 rounded-xl border ${accent} bg-ink-900/95 backdrop-blur px-4 py-3 shadow-xl shadow-black/40`;
-  el.innerHTML = `
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="${iconColor} mt-0.5 shrink-0">
-      <path d="${icon}" />
-    </svg>
-    <p class="text-sm text-ink-100 leading-snug">${escapeHtml(message)}</p>`;
-  root.appendChild(el);
-  if (!persistent) {
-    setTimeout(() => {
-      el.style.transition = "opacity .2s";
-      el.style.opacity = "0";
-      setTimeout(() => el.remove(), 220);
-    }, duration);
-  }
-}
-
-function escapeHtml(s: string): string {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function appendLog(level: string, text: string): void {
-  if (level === "error") toast(text, "error", true);
-  const log = $<HTMLDivElement>("dev-log");
-  if (log.firstChild?.textContent?.includes("yt-dlp")) {
-    log.textContent = "";
-  }
-  const line = document.createElement("div");
-  const color =
-    level === "error"
-      ? "text-red-400"
-      : level === "warn"
-        ? "text-amber-300"
-        : level === "success"
-          ? "text-emerald-400"
-          : "text-ink-300";
-  line.className = color;
-  line.textContent = text;
-  log.appendChild(line);
-  while (log.childNodes.length > 400) log.removeChild(log.firstChild!);
-  log.scrollTop = log.scrollHeight;
-}
-
-function updateStatus(stage: string, message: string): void {
-  if (stage === "download") {
-    setAnimatedText($<HTMLParagraphElement>("dl-stage"), message);
-    const done = /completada|código|erro/i.test(message);
-    if (done) {
-      // Tras detener/terminar, se ignoran los progresos tardíos.
-      downloadStopped = true;
-      // La cola de descargas no resetea la vista ni lanza un toast por canción.
-      if (!processingQueue) {
-        setDownloading(false);
-        resetDownloadUI();
-        if (/completada/i.test(message)) {
-          toast(message, "success");
-        } else {
-          toast(message, "warn");
-        }
-      }
-    } else {
-      downloadStopped = false;
-      setDownloading(true);
-      showDlControls();
-      if (!processingQueue) toast(message, "info", false, 3000);
-    }
-  } else if (stage === "song") {
-    // Una canción terminó durante el lote: refrescar el contador.
-    scheduleSyncStatsRefresh();
-  } else if (stage === "likes" || stage === "login") {
-    toast(message, "info");
-  } else if (stage === "update") {
-    if (updateModalOpen) {
-      setUpdateModalStatus(message);
-    } else {
-      toast(message, "info", false, 8000);
-    }
-  } else if (stage === "deps") {
-    if (depsModalOpen) {
-      setDepsModalStatus(message);
-    } else {
-      toast(message, "info");
-    }
-  }
-}
-
-// ---- Modal de dependencias ----
-let depsModalOpen = false;
-
-function showDepsModal(): void {
-  depsModalOpen = true;
-  $<HTMLElement>("deps-modal").classList.remove("hidden");
-  $<HTMLElement>("deps-spinner").hidden = false;
-  $<HTMLElement>("deps-modal-error").classList.add("hidden");
-  $<HTMLElement>("deps-modal-actions").classList.add("hidden");
-  setDepsModalStatus(T("depsModal.checking"));
-}
-
-function hideDepsModal(): void {
-  depsModalOpen = false;
-  $<HTMLElement>("deps-modal").classList.add("hidden");
-}
-
-function setDepsModalStatus(msg: string): void {
-  $<HTMLElement>("deps-modal-status").textContent = msg;
-}
-
-function showDepsModalError(msg: string): void {
-  depsModalOpen = true;
-  $<HTMLElement>("deps-spinner").hidden = true;
-  const err = $<HTMLElement>("deps-modal-error");
-  err.textContent = msg;
-  err.classList.remove("hidden");
-  $<HTMLElement>("deps-modal-actions").classList.remove("hidden");
-  setDepsModalStatus("");
-}
-
-async function runDepsInstall(): Promise<void> {
-  if (!isApp) return;
-  showDepsModal();
-  try {
-    await api.request.installDeps({});
-    hideDepsModal();
-    toast(T("toast.depsReady"), "success");
-    await loadStatus();
-  } catch (err) {
-    showDepsModalError(err instanceof Error ? err.message : String(err));
-  }
-}
-
-$<HTMLButtonElement>("deps-close").addEventListener("click", hideDepsModal);
-$<HTMLButtonElement>("deps-retry").addEventListener("click", () =>
-  runDepsInstall(),
-);
-
-// ---- Modal de actualización de la app ----
-let updateModalOpen = false;
-
-function showUpdateModal(version?: string): void {
-  updateModalOpen = true;
-  $<HTMLElement>("update-modal").classList.remove("hidden");
-  $<HTMLElement>("update-version").textContent = version ? `v${version}` : "";
-  $<HTMLElement>("update-status").textContent = "";
-  $<HTMLElement>("update-spinner").hidden = true;
-  $<HTMLElement>("update-icon").hidden = false;
-  const btn = $<HTMLButtonElement>("btn-apply-update");
-  btn.disabled = false;
-  btn.textContent = T("update.apply");
-}
-
-function setUpdateModalStatus(msg: string): void {
-  $<HTMLElement>("update-status").textContent = msg;
-  $<HTMLElement>("update-spinner").hidden = false;
-  $<HTMLElement>("update-icon").hidden = true;
-  $<HTMLButtonElement>("btn-apply-update").disabled = true;
-}
-
-$<HTMLButtonElement>("btn-apply-update").addEventListener("click", async () => {
-  if (!isApp) return;
-  setUpdateModalStatus(T("update.downloadingShort"));
-  const r = await api.request.applyAppUpdate({});
-  if (!r.ok) {
-    $<HTMLElement>("update-spinner").hidden = true;
-    $<HTMLElement>("update-icon").hidden = false;
-    const btn = $<HTMLButtonElement>("btn-apply-update");
-    btn.disabled = false;
-    btn.textContent = T("update.retry");
-  }
-});
-
-// Comprobación manual desde la pantalla "Acerca de".
-$<HTMLButtonElement>("btn-check-update").addEventListener("click", async () => {
-  if (!isApp) return;
-  try {
-    const r = await api.request.checkAppUpdate({});
-    if (r.updateAvailable) {
-      showUpdateModal(r.version);
-    } else {
-      toast(T("update.upToDate"), "success");
-    }
-  } catch {
-    toast(T("update.checkFailed"), "warn");
-  }
-});
-
-function updateProgress(p: DownloadProgressPayload): void {
-  trackCurrent = p.current || 0;
-  trackTotal = p.total || 0;
-  if (!downloadStopped) setDownloading(true);
-
-  if (currentQueueItem) {
-    currentQueueItem.percent = p.percent;
-    renderQueueItem(currentQueueItem);
-  }
-
-  $<HTMLParagraphElement>("dl-title").textContent =
-    p.title || T("dl.prepare");
-  setAnimatedText($<HTMLSpanElement>("dl-meta"), p.eta ? T("dl.eta", { eta: p.eta }) : "");
-  $<HTMLDivElement>("dl-bar").style.width = `${Math.min(100, p.percent)}%`;
-  setAnimatedText($<HTMLSpanElement>("dl-percent"), `${Math.round(p.percent)}%`);
-  const total = p.total || 0;
-  setAnimatedText($<HTMLParagraphElement>("dl-count"), total
-    ? T("dl.trackOf", { current: p.current || 0, total })
-    : p.percent > 0
-      ? T("dl.downloading")
-      : T("dl.prepare"));
-  showDlControls();
-}
-
-// ---- Estado de descarga ----
-let downloading = false;
-let trackCurrent = 0;
-let trackTotal = 0;
-/** true tras detener/terminar una descarga: se ignoran los progresos tardíos
- *  para que el indicador del sidebar no reaparezca. */
-let downloadStopped = false;
-let syncStatsTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Refresca (con debounce) el contador de descargadas y los checks. */
-function scheduleSyncStatsRefresh(): void {
-  if (syncStatsTimer) clearTimeout(syncStatsTimer);
-  syncStatsTimer = setTimeout(() => {
-    syncStatsTimer = null;
-    if (!isApp) return;
-    renderSyncStats();
-    refreshDownloadedIds();
-  }, 800);
-}
-
-function setDownloading(value: boolean): void {
-  downloading = value;
-  const el = $<HTMLElement>("sidebar-download");
-  const text = $<HTMLElement>("sidebar-download-text");
-  if (value) {
-    el.classList.remove("hidden");
-    setAnimatedText(text,
-      trackTotal > 0
-        ? T("dl.downloadingTracks", { current: trackCurrent, total: trackTotal })
-        : T("dl.downloadingGeneric"));
-  } else {
-    el.classList.add("hidden");
-    trackCurrent = 0;
-    trackTotal = 0;
-  }
-}
-
-function resetDownloadUI(): void {
-  $<HTMLDivElement>("dl-bar").style.width = "0%";
-  setAnimatedText($<HTMLSpanElement>("dl-percent"), "0%");
-  setAnimatedText($<HTMLParagraphElement>("dl-count"), T("downloads.idle"));
-  $<HTMLParagraphElement>("dl-title").textContent = "—";
-  setAnimatedText($<HTMLSpanElement>("dl-meta"), "");
-  hideDlControls();
-}
-
-function showDlControls(): void {
-  const controls = $<HTMLElement>("dl-controls");
-  controls.classList.remove("hidden");
-  controls.classList.add("flex");
-}
-
-function hideDlControls(): void {
-  const controls = $<HTMLElement>("dl-controls");
-  controls.classList.add("hidden");
-  controls.classList.remove("flex");
-  downloadPaused = false;
-  $<HTMLButtonElement>("btn-pause").textContent = T("dl.pause");
-}
-
-// ---- Cola: botones con estado ----
-const DL_BTN_BASE =
-  "inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white active:scale-[0.98] transition-all shrink-0";
-
-function circularLoaderSVG(percent: number): string {
-  const r = 9;
-  const c = 2 * Math.PI * r;
-  const offset = c * (1 - Math.min(100, Math.max(0, percent)) / 100);
-  return `<svg width="14" height="14" viewBox="0 0 24 24" class="inline-block align-middle">
-    <circle cx="12" cy="12" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.25" stroke-width="2.5"/>
-    <circle cx="12" cy="12" r="${r}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" transform="rotate(-90 12 12)"/>
-  </svg>`;
-}
-
-function renderQueueItem(item: QueueItem): void {
-  if (!item.button) return;
-  const btn = item.button;
-  if (item.status === "queued") {
-    btn.disabled = true;
-    btn.className = DL_BTN_BASE + " opacity-60 cursor-default";
-    btn.textContent = T("dl.queued");
-  } else if (item.status === "downloading") {
-    btn.disabled = true;
-    btn.className = DL_BTN_BASE + " cursor-default";
-    btn.innerHTML =
-      `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
-  } else if (item.status === "done") {
-    if (downloadedIds.has(item.id)) {
-      setDownloadedButtonState(btn, true);
-    } else {
-      btn.disabled = false;
-      btn.className = DL_BTN_BASE;
-      btn.textContent = T("dl.single");
-    }
-  } else {
-    btn.disabled = false;
-    btn.className = DL_BTN_BASE;
-    btn.textContent = T("dl.single");
-  }
-  updateQueueRowStatus(item);
-}
-
-function setDownloadedButtonState(
-  btn: HTMLButtonElement,
-  downloaded: boolean,
-): void {
-  if (downloaded) {
-    btn.disabled = true;
-    btn.className = DL_BTN_BASE + " opacity-50 cursor-default";
-    btn.innerHTML =
-      `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="inline-block align-middle"><path d="m5 13 4 4L19 7"/></svg>` +
-      `<span>${T("dl.downloaded")}</span>`;
-  } else {
-    btn.disabled = false;
-    btn.className = DL_BTN_BASE;
-    btn.textContent = T("dl.single");
-  }
-}
-
-async function refreshDownloadedIds(): Promise<void> {
-  if (!isApp) return;
-  try {
-    const res = await api.request.getDownloadedIds({});
-    downloadedIds = new Set(res.ids);
-  } catch {
-    downloadedIds = new Set();
-  }
-  updateAllDownloadButtons();
-}
-
-function updateAllDownloadButtons(): void {
-  for (const [id, btn] of downloadButtons) {
-    if (!btn.isConnected) {
-      downloadButtons.delete(id);
-      continue;
-    }
-    // No sobrescribir el estado de la cola (en cola / descargando).
-    const inQueue = downloadQueue.some(
-      (q) =>
-        q.id === id &&
-        (q.status === "queued" || q.status === "downloading"),
-    );
-    if (inQueue) continue;
-    setDownloadedButtonState(btn, downloadedIds.has(id));
-  }
-}
-
-function enqueueDownload(
-  id: string,
-  url: string,
-  title: string,
-  btn: HTMLButtonElement,
-): void {
-  if (!guard()) return;
-  const existing = downloadQueue.find((q) => q.url === url);
-  if (
-    existing &&
-    (existing.status === "queued" || existing.status === "downloading")
-  ) {
-    toast(T("dl.alreadyQueued"), "warn");
-    return;
-  }
-  const item: QueueItem = { id, url, title, status: "queued", percent: 0, button: btn };
-  if (existing) {
-    existing.status = "queued";
-    existing.percent = 0;
-    existing.button = btn;
-    renderQueueItem(existing);
-  } else {
-    downloadQueue.push(item);
-    renderQueueItem(item);
-  }
-  toast(T("dl.enqueued", { title }), "info", false, 2200);
-  renderQueue();
-  if (!processingQueue) processQueue();
-}
-
-async function processQueue(): Promise<void> {
-  if (processingQueue) return;
-  processingQueue = true;
-  try {
-    while (true) {
-      currentQueueItem =
-        downloadQueue.find((q) => q.status === "queued") ?? null;
-      if (!currentQueueItem) break;
-      // Si el fichero ya existe en disco, se salta sin llamar a yt-dlp.
-      if (downloadedIds.has(currentQueueItem.id)) {
-        currentQueueItem.status = "done";
-        currentQueueItem.percent = 100;
-        renderQueueItem(currentQueueItem);
-        continue;
-      }
-      currentQueueItem.status = "downloading";
-      renderQueueItem(currentQueueItem);
-      try {
-        await api.request.downloadTrack({ url: currentQueueItem.url });
-        // currentQueueItem puede ser null si se pulsó "Detener" mientras
-        // la descarga estaba en curso (clearQueue lo resetea).
-        if (currentQueueItem) {
-          currentQueueItem.status = "done";
-          currentQueueItem.percent = 100;
-        }
-      } catch (err) {
-        if (currentQueueItem) {
-          currentQueueItem.status = "error";
-          toast((err as Error).message, "error", true);
-        }
-      }
-      if (currentQueueItem) renderQueueItem(currentQueueItem);
-      await refreshDownloadedIds();
-      await renderSyncStats();
-      await renderHistory();
-    }
-  } finally {
-    processingQueue = false;
-    currentQueueItem = null;
-    setDownloading(false);
-    resetDownloadUI();
-  }
-}
-
-function makeDownloadButton(t: {
+interface CollectionItem {
   id: string;
-  url: string;
   title: string;
-}): HTMLButtonElement {
-  const btn = document.createElement("button");
-  btn.className = DL_BTN_BASE;
-  btn.textContent = T("dl.single");
-  downloadButtons.set(t.id, btn);
-  if (downloadedIds.has(t.id)) setDownloadedButtonState(btn, true);
-  btn.addEventListener("click", () =>
-    enqueueDownload(t.id, t.url, t.title, btn),
-  );
-  return btn;
+  uploader?: string;
+  url: string;
 }
 
-// ---- Lista de la cola (con paginación) ----
-const QUEUE_PAGE_SIZE = 15;
-let queuePage = 0;
-const queueStatusEls = new Map<string, HTMLElement>();
+const state = {
+  view: "status",
+  loggedIn: false,
+  username: "",
+  deps: { ytdlp: null as null | { ok: boolean; own: boolean; ver: string; upd: boolean }, ffmpeg: null as null | { ok: boolean; own: boolean; ver: string } },
+  config: null as ConfigPayload | null,
+  likes: [] as CollectionItem[],
+  playlists: [] as { id: string; title: string; url: string; uploader?: string; count?: number }[],
+  history: [] as { ts: number; target: string; format: string; ok: boolean }[],
+  downloadedIds: new Set<string>(),
+  queue: [] as QueueItem[],
+  qPage: 1,
+  qPer: 6,
+  downloading: false,
+  paused: false,
+  curIdx: 0,
+  tab: "likes",
+  colMode: "grid",
+  searchMode: "grid",
+  openPlaylist: null as null | { id: string; title: string; url: string },
+  playlistTracks: [] as CollectionItem[],
+  searchResults: null as CollectionItem[] | null,
+  log: [] as string[],
+  syncTotal: 0,
+  syncDone: 0,
+  // settings dirty
+  baseline: "",
+};
+
+// ================= arte generado (avatares de pistas) =================
+const ART_PALETTE: [string, string][] = [
+  ["#e8e4dd", "#1c1c1a"],
+  ["#1c1c1a", "#e8e4dd"],
+  ["#2b3440", "#c3cbd6"],
+  ["#d9d3c7", "#8a5a3b"],
+  ["#3f4a44", "#cfd8cf"],
+  ["#f0ece4", "#ff5500"],
+  ["#232a33", "#ff5500"],
+  ["#6b6257", "#f2ede3"],
+];
+const artCache: Record<string, string> = {};
+function hashOf(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h;
+}
+function artFor(item: { title: string; uploader?: string }): string {
+  const key = (item.title || "") + "|" + (item.uploader || "");
+  if (artCache[key]) return artCache[key];
+  const h = hashOf(key);
+  const [a, b] = ART_PALETTE[h % ART_PALETTE.length];
+  const kind = h % 4;
+  let shapes = "";
+  if (kind === 0) {
+    shapes =
+      '<circle cx="' + (20 + (h % 40)) + '" cy="' + (25 + ((h >> 3) % 40)) + '" r="' + (16 + (h % 18)) + '" fill="' + b + '"/>' +
+      '<rect x="0" y="' + (60 + (h % 20)) + '" width="100" height="6" fill="' + b + '" opacity=".7"/>';
+  } else if (kind === 1) {
+    shapes =
+      '<path d="M0 100 L' + (30 + (h % 30)) + ' ' + (20 + (h % 30)) + ' L100 100 Z" fill="' + b + '"/>' +
+      '<rect x="' + (10 + (h % 20)) + '" y="10" width="8" height="' + (20 + (h % 40)) + '" fill="' + b + '" opacity=".6"/>';
+  } else if (kind === 2) {
+    shapes = Array.from({ length: 6 }, (_, i) =>
+      '<rect x="' + (8 + i * 15) + '" y="' + (70 - ((h >> i) % 55)) + '" width="9" height="' + (12 + ((h >> i) % 55)) + '" fill="' + b + '" opacity="' + (0.5 + (i % 3) * 0.25) + '"/>',
+    ).join("");
+  } else {
+    shapes =
+      '<rect x="' + (12 + (h % 24)) + '" y="' + (12 + ((h >> 2) % 24)) + '" width="' + (34 + (h % 26)) + '" height="' + (34 + ((h >> 4) % 26)) + '" fill="' + b + '"/>' +
+      '<circle cx="82" cy="82" r="14" fill="none" stroke="' + b + '" stroke-width="4"/>';
+  }
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="' + a + '"/>' + shapes + "</svg>";
+  const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  artCache[key] = url;
+  return url;
+}
+function artImg(item: { title: string; uploader?: string }, cls: string): string {
+  return '<img src="' + artFor(item) + '" alt="" aria-hidden="true" class="' + cls + '" loading="lazy" />';
+}
+
+// ================= log =================
+function onLog(level: LogLevel, text: string): void {
+  state.log.push(text);
+  if (state.log.length > 400) state.log.shift();
+  const pre = $("#dev-log");
+  if (pre) {
+    const auto = $("#log-autoscroll") as HTMLInputElement | null;
+    const stick = !auto || auto.checked;
+    pre.textContent = state.log.join("\n");
+    if (stick) pre.scrollTop = pre.scrollHeight;
+  }
+}
+function log(line: string): void {
+  onLog("info", line);
+}
+
+// ================= navegación =================
+function setView(view: string): void {
+  state.view = view;
+  $$("[data-nav]").forEach((b) => {
+    const on = b.dataset.nav === view;
+    b.classList.toggle("is-active", on);
+    if (b.hasAttribute("aria-current") || on) b.setAttribute("aria-current", on ? "page" : "false");
+  });
+  $$("[data-view]").forEach((s) => s.classList.toggle("hidden", s.dataset.view !== view));
+  const main = document.querySelector("main");
+  if (main) main.scrollTop = 0;
+  if (view === "download") renderAll();
+  if (view === "collection") renderCollection();
+  if (view === "settings") renderBitrates();
+  if (view === "developer") renderDev();
+}
+
+// ================= sidebar =================
+function renderSidebarState(): void {
+  const dot = $("#sb-dot");
+  const txt = $("#sb-state");
+  const box = $("#sb-status");
+  let color = "bg-amber-400";
+  let label = T("sidebar.loading");
+  let action = "";
+  if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) {
+    label = T("sidebar.deps");
+    action = "deps";
+  } else if (!state.loggedIn) {
+    label = T("sidebar.signin");
+    action = "login";
+  } else {
+    label = T("sidebar.ready", { count: state.syncTotal || state.likes.length });
+    color = "bg-emerald-400";
+  }
+  dot.className = "h-2 w-2 shrink-0 rounded-full " + color;
+  setAnimatedText(txt, label);
+  box.dataset.actionable = action ? "true" : "false";
+  box.dataset.sbAction = action;
+  box.title = action ? label : "";
+  const dl = $("#sb-downloading");
+  dl.classList.toggle("hidden", !state.downloading);
+  dl.classList.toggle("flex", state.downloading);
+  const pending = state.queue.filter((q) => q.state !== "done" && q.state !== "error").length;
+  const badge = $("#nav-queue-badge");
+  badge.textContent = pending ? String(pending) : "";
+  badge.classList.toggle("hidden", !pending);
+}
+
+// ================= cuenta =================
+function renderAccount(): void {
+  const av = $("#acct-avatar");
+  av.textContent = state.loggedIn ? (state.username[0] || "?").toUpperCase() : "?";
+  av.className =
+    "flex h-12 w-12 items-center justify-center font-display text-lg " +
+    (state.loggedIn ? "bg-brand-600 text-white" : "bg-[var(--line)] text-[var(--text-dim)]");
+  $("#acct-name").textContent = state.loggedIn ? state.username : T("account.anonymous");
+  const chip = $("#acct-chip");
+  chip.textContent = state.loggedIn ? T("account.loggedIn") : T("account.loggedOut");
+  chip.className = "chip " + (state.loggedIn ? "chip-on" : "chip-muted");
+  $("#acct-msg").textContent = state.loggedIn ? T("account.msgIn") : T("account.msgOut");
+  $("#btn-logout").classList.toggle("hidden", !state.loggedIn);
+}
+
+// ================= herramientas =================
+function toolRow(name: string, d: { ok: boolean; own?: boolean; ver?: string; upd?: boolean }): string {
+  return (
+    '<div class="flex items-center gap-3 rounded-none border border-[var(--line)] px-3 py-2.5">' +
+    '<span class="flex h-6 w-6 items-center justify-center text-xs ' +
+    (d.ok ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400") +
+    '">' +
+    (d.ok ? "✓" : "✗") +
+    "</span>" +
+    '<div class="min-w-0 flex-1"><p class="text-sm font-medium">' +
+    name +
+    '</p><p class="row-sub">' +
+    (d.ok ? (d.own ? T("tools.own") : T("tools.system")) : T("tools.missing")) +
+    "</p></div>" +
+    (d.ok
+      ? '<span class="font-mono text-xs text-[var(--text-dim)]">' + (d.ver || "") + "</span>" +
+        (d.upd
+          ? '<span class="chip ml-2" style="background:rgba(255,85,0,.15);color:#ff7a33">' + T("tools.update") + "</span>"
+          : "")
+      : "") +
+    "</div>"
+  );
+}
+function renderTools(): void {
+  const yt = state.deps.ytdlp;
+  const ff = state.deps.ffmpeg;
+  $("#tools-list").innerHTML =
+    toolRow("yt-dlp", yt || { ok: false }) +
+    toolRow("ffmpeg", ff || { ok: false });
+  $("#btn-install").classList.toggle("hidden", !!(yt?.ok && ff?.ok));
+}
+
+// ================= sync =================
+function renderSync(): void {
+  const done = state.syncDone;
+  const total = state.syncTotal;
+  const missing = total - done;
+  setAnimatedText(
+    $("#sync-state"),
+    total === 0 ? T("dl.calculating") : missing === 0 ? T("dl.allDone") : T("dl.missingState", { n: missing }),
+  );
+  setAnimatedText($("#missing-count"), String(missing));
+  setAnimatedText($("#sync-done"), String(done));
+  setAnimatedText($("#sync-total"), String(total));
+  $("#sync-fill").style.width = (total ? (done / total) * 100 : 0) + "%";
+  setAnimatedText($("#likes-count"), String(total || state.likes.length));
+}
+
+// ================= cola =================
+function queueStatusHtml(item: QueueItem): string {
+  if (item.state === "done")
+    return (
+      '<span class="flex items-center gap-2 text-xs text-emerald-400">✓ ' +
+      T("q.done") +
+      '<button class="pager" data-open-folder="' + item.id + '" title="Abrir carpeta">📁</button></span>'
+    );
+  if (item.state === "error") return '<span class="text-xs text-red-400">' + T("q.error") + "</span>";
+  if (item.state === "active")
+    return (
+      '<span class="flex items-center gap-2 text-xs text-brand-500"><span class="spinner spinner-accent h-3.5 w-3.5"></span>' +
+      item.pct +
+      "%</span>"
+    );
+  return '<span class="text-xs text-[var(--text-dim)]">' + T("q.queued") + "</span>";
+}
 
 function renderQueue(): void {
-  const list = $<HTMLElement>("queue-list");
-  const total = downloadQueue.length;
-  setAnimatedText($<HTMLElement>("queue-count"), T("queue.count", { total }));
-  const pages = Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE));
-  if (queuePage >= pages) queuePage = pages - 1;
-  const start = queuePage * QUEUE_PAGE_SIZE;
-  const slice = downloadQueue.slice(start, start + QUEUE_PAGE_SIZE);
-
-  queueStatusEls.clear();
-  list.textContent = "";
-  if (!slice.length) {
-    const p = document.createElement("p");
-    p.className = "text-xs text-ink-500";
-    p.textContent = T("queue.empty");
-    list.appendChild(p);
+  const list = $("#queue-list");
+  const pages = Math.max(1, Math.ceil(state.queue.length / state.qPer));
+  if (state.qPage > pages) state.qPage = pages;
+  setAnimatedText($("#q-page"), String(state.qPage));
+  setAnimatedText($("#q-pages"), String(pages));
+  const pending = state.queue.filter((q) => q.state !== "done" && q.state !== "error").length;
+  $("#q-count").textContent = state.queue.length ? pending + "/" + state.queue.length : "";
+  if (!state.queue.length) {
+    list.innerHTML =
+      '<div class="empty"><svg viewBox="0 0 24 24" class="empty-ico"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M4 20h16"/></svg><p>' +
+      T("dl.queueEmpty") +
+      "</p></div>";
+    return;
   }
-  slice.forEach((item, i) => list.appendChild(queueRow(item, start + i + 1)));
-
-  $<HTMLButtonElement>("queue-prev").disabled = queuePage === 0;
-  $<HTMLButtonElement>("queue-next").disabled = queuePage >= pages - 1;
-  setAnimatedText($<HTMLElement>("queue-page"), T("queue.page", { page: queuePage + 1, pages }));
+  const start = (state.qPage - 1) * state.qPer;
+  list.innerHTML = state.queue
+    .slice(start, start + state.qPer)
+    .map(
+      (it, i) =>
+        '<div class="row"><span class="row-num">' +
+        (start + i + 1) +
+        "</span>" +
+        artImg(it, "row-art") +
+        '<div class="row-main"><p class="row-title">' +
+        it.title +
+        '</p><p class="row-sub">' +
+        (it.uploader || "") +
+        "</p></div>" +
+        queueStatusHtml(it) +
+        "</div>",
+    )
+    .join("");
 }
 
-function queueRow(item: QueueItem, index: number): HTMLElement {
-  const row = document.createElement("div");
-  row.className =
-    "flex items-center gap-3 rounded-lg border border-ink-800 bg-ink-850/60 px-3 py-2";
-  const num = document.createElement("span");
-  num.className = "w-6 shrink-0 text-xs text-ink-500 tabular-nums text-right";
-  num.textContent = String(index);
-  const title = document.createElement("p");
-  title.className = "flex-1 min-w-0 text-sm text-ink-100 truncate";
-  title.textContent = item.title;
-  const status = document.createElement("span");
-  status.className = "shrink-0 flex items-center gap-1 text-xs";
-  queueStatusEls.set(item.url, status);
-  row.appendChild(num);
-  row.appendChild(title);
-  row.appendChild(status);
-  updateQueueRowStatus(item);
-  return row;
+function renderHistory(): void {
+  const failed = state.history.filter((h) => !h.ok).length;
+  $("#h-count").textContent = state.history.length + (failed ? " · " + failed + " ✗" : "");
+  $("#btn-retry-failed").classList.toggle("hidden", !failed);
+  $("#history-list").innerHTML = state.history
+    .slice(0, 30)
+    .map(
+      (h) =>
+        '<div class="row"><div class="row-main"><p class="row-title">' +
+        h.target +
+        '</p><p class="row-sub">' +
+        new Date(h.ts).toLocaleString() +
+        " · " +
+        h.format +
+        '</p></div><span class="text-xs ' +
+        (h.ok ? "text-emerald-400" : "text-red-400") +
+        '">' +
+        (h.ok ? "✓" : "✗") +
+        "</span></div>",
+    )
+    .join("");
 }
 
-function updateQueueRowStatus(item: QueueItem): void {
-  const status = queueStatusEls.get(item.url);
-  if (!status) return;
-  status.className = "shrink-0 flex items-center gap-1 text-xs";
-  if (item.status === "queued") {
-    status.className += " text-ink-400";
-    status.textContent = T("dl.queued");
-  } else if (item.status === "downloading") {
-    status.className += " text-brand-300";
-    status.innerHTML =
-      `${circularLoaderSVG(item.percent)}<span>${Math.round(item.percent)}%</span>`;
-  } else if (item.status === "done") {
-    status.className += " text-emerald-400";
-    status.innerHTML = "";
-    const tick = document.createElement("span");
-    tick.textContent = "✓";
-    const folderBtn = document.createElement("button");
-    folderBtn.type = "button";
-    folderBtn.className =
-      "inline-flex items-center justify-center w-6 h-6 rounded-md text-ink-300 hover:text-white hover:bg-ink-800 transition-colors";
-    folderBtn.title = T("queue.openFolder");
-    folderBtn.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>';
-    folderBtn.addEventListener("click", async () => {
+// ================= descarga =================
+let currentDownloadUrl: string | null = null;
+
+function canDownload(): boolean {
+  if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) {
+    toast(T("toast.needDeps"), "error", false, { label: T("modal.deps.title"), run: () => openModal("deps") });
+    return false;
+  }
+  if (!state.loggedIn) {
+    toast(T("toast.needLogin"), "warn", false, { label: T("account.login"), run: () => setView("status") });
+    return false;
+  }
+  return true;
+}
+
+function isDownloaded(id: string): boolean {
+  return state.downloadedIds.has(id);
+}
+
+function trackButtonHtml(item: CollectionItem): string {
+  if (isDownloaded(item.id)) return '<button class="btn-secondary" disabled>✓ ' + T("q.done") + "</button>";
+  const q = state.queue.find((x) => x.id === item.id);
+  if (q?.state === "active")
+    return '<button class="btn-secondary"><span class="spinner spinner-accent h-3.5 w-3.5"></span>' + q.pct + "%</button>";
+  if (q?.state === "queued") return '<button class="btn-secondary" disabled>' + T("q.queued") + "</button>";
+  return '<button class="btn-primary" data-dl-track="' + item.id + '">' + T("common.download") + "</button>";
+}
+
+function rowHtml(item: CollectionItem, n: number): string {
+  return (
+    '<div class="row"><span class="row-num">' +
+    n +
+    "</span>" +
+    artImg(item, "row-art") +
+    '<div class="row-main"><p class="row-title">' +
+    item.title +
+    '</p><p class="row-sub">' +
+    (item.uploader || "") +
+    "</p></div>" +
+    trackButtonHtml(item) +
+    "</div>"
+  );
+}
+
+function cardHtml(item: CollectionItem): string {
+  const done = isDownloaded(item.id);
+  const q = state.queue.find((x) => x.id === item.id);
+  return (
+    '<div class="tile' + (done ? " is-done" : "") + '">' +
+    '<div class="tile-art">' +
+    artImg(item, "tile-img") +
+    (done ? '<span class="tile-flag">✓</span>' : "") +
+    (q?.state === "active" ? '<span class="tile-flag is-live">' + q.pct + "%</span>" : "") +
+    '<div class="tile-hover">' + trackButtonHtml(item) + "</div>" +
+    "</div>" +
+    '<p class="tile-title" title="' + item.title + '">' + item.title + "</p>" +
+    '<p class="tile-sub">' + (item.uploader || "") + "</p>" +
+    "</div>"
+  );
+}
+
+function listOrGrid(items: CollectionItem[], mode: string): string {
+  return mode === "grid"
+    ? '<div class="tile-grid">' + items.map(cardHtml).join("") + "</div>"
+    : items.map((l, i) => rowHtml(l, i + 1)).join("");
+}
+
+function playlistCardHtml(p: { title: string; uploader?: string; count?: number }, i: number): string {
+  const fake = { title: p.title, uploader: p.uploader };
+  return (
+    '<div class="tile"><div class="tile-art">' +
+    artImg(fake, "tile-img") +
+    '<span class="tile-flag">' + (p.count ?? "") + "</span>" +
+    '<div class="tile-hover"><button class="btn-primary" data-open-playlist="' + i + '">' + T("col.open") + "</button></div>" +
+    '</div><p class="tile-title">' + p.title + '</p><p class="tile-sub">' + (p.uploader || "") + "</p></div>"
+  );
+}
+
+// ================= colección =================
+function renderCollection(): void {
+  const q = (($("#col-filter") as HTMLInputElement).value || "").toLowerCase();
+  $("#col-clear").classList.toggle("hidden", !q);
+  setAnimatedText($("#tab-likes-count"), String(state.likes.length));
+  setAnimatedText($("#tab-pl-count"), String(state.playlists.length));
+  $$("[data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
+  if (state.openPlaylist) $("#col-tracks-title").textContent = state.openPlaylist.title;
+  const isLikes = state.tab === "likes";
+  $("#col-likes").classList.toggle("hidden", !isLikes);
+  $("#col-playlists").classList.toggle("hidden", isLikes || !!state.openPlaylist);
+  $("#col-tracks").classList.toggle("hidden", isLikes || !state.openPlaylist);
+
+  const mode = state.colMode;
+  if (isLikes) {
+    const rows = state.likes.filter((l) => (l.title + (l.uploader || "")).toLowerCase().includes(q));
+    $("#col-likes").innerHTML = rows.length
+      ? listOrGrid(rows, mode)
+      : '<div class="empty"><p>' + T("col.emptyFilter") + "</p></div>";
+  } else if (state.openPlaylist) {
+    const tracks = state.playlistTracks.filter((l) =>
+      (l.title + (l.uploader || "")).toLowerCase().includes(q),
+    );
+    $("#col-tracks-list").innerHTML = tracks.length
+      ? listOrGrid(tracks, mode)
+      : '<div class="empty"><p>' + T("col.emptyFilter") + "</p></div>";
+  } else {
+    const rows = state.playlists.filter((p) => (p.title + (p.uploader || "")).toLowerCase().includes(q));
+    const idxOf = (p: (typeof state.playlists)[number]) => state.playlists.indexOf(p);
+    $("#col-playlists").innerHTML = rows.length
+      ? mode === "grid"
+        ? '<div class="tile-grid">' + rows.map((p) => playlistCardHtml(p, idxOf(p))).join("") + "</div>"
+        : rows
+            .map(
+              (p) =>
+                '<div class="row"><span class="row-num">' +
+                (idxOf(p) + 1) +
+                "</span>" +
+                artImg({ title: p.title, uploader: p.uploader }, "row-art") +
+                '<div class="row-main"><p class="row-title">' +
+                p.title +
+                '</p><p class="row-sub">' +
+                (p.uploader || "") +
+                " · " +
+                (p.count ?? "") +
+                '</p></div><button class="btn-secondary" data-open-playlist="' +
+                idxOf(p) +
+                '">' +
+                T("col.open") +
+                "</button></div>",
+            )
+            .join("")
+      : '<div class="empty"><p>' + T("col.emptyFilter") + "</p></div>";
+  }
+  syncModeButtons("col", state.colMode);
+}
+
+function syncModeButtons(scope: "col" | "search", mode: string): void {
+  $$("[data-mode]").forEach((b) => {
+    const [s, m] = b.dataset.mode!.split(":");
+    const cur = s === "col" ? state.colMode : state.searchMode;
+    b.classList.toggle("is-active", cur === m);
+    b.setAttribute("aria-pressed", String(cur === m));
+  });
+}
+
+// ================= ajustes =================
+const BITRATES: Record<string, string[] | null> = {
+  m4a: ["256k", "224k", "192k", "160k", "128k", "96k", "64k"],
+  mp3: ["320k", "256k", "192k", "160k", "128k", "96k", "64k"],
+  opus: ["160k", "128k", "96k", "64k"],
+  vorbis: ["192k", "160k", "128k", "96k", "64k"],
+  flac: null,
+  wav: null,
+  original: null,
+};
+
+function renderBitrates(): void {
+  const fmt = ($("#set-format") as HTMLSelectElement).value;
+  const sel = $("#set-bitrate") as HTMLSelectElement;
+  const opts = BITRATES[fmt];
+  sel.innerHTML = opts
+    ? opts.map((b) => '<option value="' + b + '">' + b + "</option>").join("")
+    : '<option value="">—</option>';
+  sel.disabled = !opts;
+  renderTplPreview();
+}
+
+const TPL_FIELDS: [string, string, string][] = [
+  ["title", "Título", "Title"],
+  ["uploader", "Subidor", "Uploader"],
+  ["artist", "Artista", "Artist"],
+  ["album", "Álbum", "Album"],
+  ["id", "ID", "ID"],
+  ["playlist_index", "Nº", "No."],
+  ["ext", "Ext", "Ext"],
+];
+
+function renderTplChips(): void {
+  $("#tpl-chips").innerHTML = TPL_FIELDS.map(
+    (f) =>
+      '<button class="tpl-chip" data-tpl="' + f[0] + '">' + (currentLang === "es" ? f[1] : f[2]) + "</button>",
+  ).join("");
+}
+
+function renderTplPreview(): void {
+  const tpl = $("#tpl-editor").textContent || "";
+  const fmt = ($("#set-format") as HTMLSelectElement).value;
+  const ext = fmt === "original" ? "m4a" : fmt;
+  const rendered = tpl
+    .replace(/%\(title\)s/g, "Neon Backroad")
+    .replace(/%\(uploader\)s/g, "Kaori Lane")
+    .replace(/%\(artist\)s/g, "Kaori Lane")
+    .replace(/%\(album\)s/g, "Singles")
+    .replace(/%\(id\)s/g, "100042")
+    .replace(/%\(playlist_index\)s/g, "07")
+    .replace(/%\(ext\)s/g, ext);
+  // La extensión la añade yt-dlp al descargar; se muestra en la preview.
+  $("#tpl-preview").textContent = rendered + (/%\(ext\)s/.test(tpl) ? "" : "." + ext);
+}
+
+function snapshotSettings(): string {
+  return JSON.stringify({
+    f: ($("#set-folder") as HTMLInputElement).value,
+    fmt: ($("#set-format") as HTMLSelectElement).value,
+    br: ($("#set-bitrate") as HTMLSelectElement).value,
+    tpl: $("#tpl-editor").textContent,
+    skip: ($("#set-skip") as HTMLInputElement).checked,
+    theme: ($("#set-theme") as HTMLSelectElement).value,
+    lang: currentLang,
+  });
+}
+function markClean(): void {
+  state.baseline = snapshotSettings();
+  refreshDirty();
+}
+function refreshDirty(): void {
+  const tpl = $("#tpl-editor").textContent || "";
+  // yt-dlp añade la extensión al descargar; solo exigimos al menos una variable.
+  const tplBad = !/%\([^)]+\)s/.test(tpl);
+  $("#tpl-error").classList.toggle("hidden", !tplBad);
+  const dirty = snapshotSettings() !== state.baseline;
+  $("#set-dirty").classList.toggle("hidden", !dirty);
+  const btn = $("#btn-save-settings") as HTMLButtonElement;
+  btn.disabled = !dirty || tplBad;
+  btn.title = tplBad ? T("set.tplError") : dirty ? "" : T("tip.noChanges");
+}
+
+// ================= tema / idioma =================
+function applyTheme(theme: string): void {
+  document.documentElement.classList.toggle("dark", theme !== "light");
+  ($("#set-theme") as HTMLSelectElement).value = theme;
+}
+function applyLang(next: Lang): void {
+  currentLang = next;
+  ($("#set-lang") as HTMLSelectElement).value = next;
+  applyStaticTranslations();
+}
+
+// ================= búsqueda =================
+function renderSearch(query: string): void {
+  const box = $("#search-results");
+  const counter = $("#search-count");
+  if (!query && !state.searchResults) {
+    box.innerHTML =
+      '<div class="empty"><svg viewBox="0 0 24 24" class="empty-ico"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><p>' +
+      T("search.empty") +
+      '</p><p class="note">' + T("search.hint") + "</p></div>";
+    counter.textContent = "";
+    syncModeButtons("search", state.searchMode);
+    return;
+  }
+  const pool =
+    state.searchResults ||
+    state.likes.filter((l) =>
+      (l.title + (l.uploader || "")).toLowerCase().includes(query.toLowerCase()),
+    );
+  counter.textContent = pool.length ? String(pool.length) : "0";
+  box.innerHTML = pool.length
+    ? listOrGrid(pool, state.searchMode)
+    : '<div class="empty"><p>' + T("search.none") + "</p></div>";
+  syncModeButtons("search", state.searchMode);
+}
+
+// ================= dev =================
+function renderDev(): void {
+  const ok = state.history.filter((h) => h.ok).length;
+  const errors = state.history.filter((h) => !h.ok).length;
+  const perDay = state.history.length ? Math.round(state.history.length / Math.max(1, new Date().getDay() || 1)) : 0;
+  const cards: [string, string][] = [
+    [T("dev.perDay"), String(perDay)],
+    [T("dev.total"), String(state.history.length)],
+    [T("dev.errors"), String(errors)],
+    [T("dev.space"), "-"],
+  ];
+  $("#dev-stats").innerHTML = cards
+    .map(
+      (c) =>
+        '<div class="card !p-4"><p class="label">' + c[0] + '</p><p class="mt-1 font-display text-2xl font-semibold">' + c[1] + "</p></div>",
+    )
+    .join("");
+}
+
+// ================= modales =================
+function openModal(id: string): void {
+  $("#modal-" + id).classList.remove("hidden");
+}
+function closeModal(el: HTMLElement): void {
+  el.classList.add("hidden");
+}
+
+let purgeTimer: ReturnType<typeof setInterval> | null = null;
+function openPurge(): void {
+  const n = state.likes.length; // preview: se recalcula en el service
+  $("#purge-count").textContent = String(n);
+  const btn = $("#purge-confirm") as HTMLButtonElement;
+  btn.disabled = true;
+  let left = 3;
+  setAnimatedText($("#purge-timer"), String(left));
+  if (purgeTimer) clearInterval(purgeTimer);
+  purgeTimer = setInterval(() => {
+    left -= 1;
+    setAnimatedText($("#purge-timer"), String(Math.max(0, left)));
+    if (left <= 0) {
+      if (purgeTimer) clearInterval(purgeTimer);
+      purgeTimer = null;
+      btn.disabled = false;
+    }
+  }, 1000);
+  openModal("purge");
+}
+
+async function runDeps(): Promise<void> {
+  if (!isApp) return;
+  const pre = $("#deps-log");
+  pre.textContent = "";
+  openModal("deps");
+  pre.textContent += T("modal.deps.sub") + "\n";
+  try {
+    await api.request.installDeps({});
+    pre.textContent += "done.\n";
+    await loadStatus();
+    toast(T("toast.depsOk"), "success");
+    setTimeout(() => closeModal($("#modal-deps")), 700);
+  } catch (err) {
+    pre.textContent += "ERROR: " + (err as Error).message + "\n";
+  }
+}
+
+function openJson(mode: "export" | "import"): void {
+  $("#json-title").textContent = T(mode === "export" ? "modal.json.export" : "modal.json.import");
+  const btn = $("#json-confirm") as HTMLButtonElement;
+  btn.textContent = T(mode === "export" ? "common.copy" : "common.apply");
+  const apply = (json: string): void => {
+    try {
+      const data = JSON.parse(json) as Partial<ConfigPayload>;
+      if (data.outdir) ($("#set-folder") as HTMLInputElement).value = data.outdir;
+      if (data.format) ($("#set-format") as HTMLSelectElement).value = data.format;
+      renderBitrates();
+      if (data.bitrate) ($("#set-bitrate") as HTMLSelectElement).value = data.bitrate;
+      if (data.filenameTemplate) $("#tpl-editor").textContent = data.filenameTemplate;
+      if (typeof data.skipExisting === "boolean") ($("#set-skip") as HTMLInputElement).checked = data.skipExisting;
+      if (data.theme) applyTheme(data.theme);
+      if (data.lang) applyLang(normalizeLang(data.lang));
+      renderTplPreview();
+      refreshDirty();
+      toast(T("toast.imported"), "success");
+    } catch {
+      toast(T("toast.badJson"), "error");
+      return;
+    }
+  };
+  btn.onclick = async () => {
+    if (mode === "export") {
       if (!isApp) return;
       try {
-        const r = await api.request.showDownloadedItem({
-          id: item.id,
-          title: item.title,
-        });
-        if (!r.ok) toast(T("queue.fileNotFound"), "warn");
+        const r = await api.request.exportConfig({});
+        ($("#json-area") as HTMLTextAreaElement).value = r.json;
+        navigator.clipboard && navigator.clipboard.writeText(r.json);
+        toast(T("toast.copied"), "success");
       } catch {
-        toast(T("queue.fileNotFound"), "warn");
+        toast(T("toast.badJson"), "error");
+        return;
       }
-    });
-    status.appendChild(tick);
-    status.appendChild(folderBtn);
+      return;
+    }
+    apply(($("#json-area") as HTMLTextAreaElement).value);
+    closeModal($("#modal-json"));
+  };
+  if (mode === "export") {
+    if (isApp) {
+      api.request.exportConfig({}).then((r: { json: string }) => {
+        ($("#json-area") as HTMLTextAreaElement).value = r.json;
+      });
+    } else {
+      ($("#json-area") as HTMLTextAreaElement).value = "";
+    }
   } else {
-    status.className += " text-red-400";
-    status.textContent = T("dl.error");
+    ($("#json-area") as HTMLTextAreaElement).value = "";
+  }
+  openModal("json");
+}
+
+// ================= datos (RPC) =================
+async function loadStatus(): Promise<StatusSnapshot | null> {
+  if (!isApp) return null;
+  try {
+    const s = await api.request.getStatus({});
+    state.config = s.config;
+    state.loggedIn = !!s.config.hasToken;
+    state.username = s.config.username || "";
+    const deps: DepsStatus = s.deps;
+    state.deps = {
+      ytdlp: deps.ytdlpPresent
+        ? { ok: true, own: !!deps.ytdlpPath, ver: deps.ytdlpVersion.current || "", upd: !!deps.ytdlpVersion.hasUpdate }
+        : null,
+      ffmpeg: deps.ffmpegPresent
+        ? { ok: true, own: !!deps.ffmpegDir, ver: deps.ffmpegVersion.current || "" }
+        : null,
+    };
+    renderAccount();
+    renderTools();
+    renderSidebarState();
+    return s;
+  } catch {
+    return null;
   }
 }
 
-$<HTMLButtonElement>("queue-prev").addEventListener("click", () => {
-  if (queuePage > 0) {
-    queuePage--;
-    renderQueue();
+async function loadLikes(): Promise<void> {
+  if (!isApp) return;
+  try {
+    const r = await api.request.getLikesCache({});
+    if (r.tracks.length) {
+      state.likes = r.tracks as unknown as CollectionItem[];
+    } else {
+      const res = await api.request.refreshLikes({});
+      state.likes = res.tracks as unknown as CollectionItem[];
+    }
+  } catch {
+    state.likes = [];
   }
-});
-$<HTMLButtonElement>("queue-next").addEventListener("click", () => {
-  const pages = Math.max(1, Math.ceil(downloadQueue.length / QUEUE_PAGE_SIZE));
-  if (queuePage < pages - 1) {
-    queuePage++;
-    renderQueue();
-  }
-});
-
-// ---- Navegación ----
-const views = ["status", "download", "search", "collection", "settings", "developer", "about"];
-
-function showView(name: string): void {
-  document.querySelector<HTMLElement>("main")?.scrollTo(0, 0);
-  for (const v of views) {
-    $<HTMLElement>(`view-${v}`).classList.toggle("hidden", v !== name);
-  }
-  document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((b) => {
-    const active = b.dataset.view === name;
-    b.classList.toggle("bg-brand-500/15", active);
-    b.classList.toggle("text-brand-300", active);
-    b.classList.toggle("font-medium", active);
-  });
-  if (name === "download") {
-    renderSyncStats();
-    renderHistory();
-    renderQueue();
-  }
-  if (name === "developer") {
-    renderStats();
-  }
-  if (name === "collection") {
-    renderCollection();
-  }
-  if (name === "settings") {
-    renderStreamingQualityStatus();
-  }
+  renderSync();
+  renderCollection();
 }
 
-document.querySelectorAll<HTMLButtonElement>(".nav-btn").forEach((b) => {
-  b.addEventListener("click", () => showView(b.dataset.view!));
-});
-
-// ---- Sincronización ----
-async function renderSyncStats(): Promise<void> {
+async function refreshSync(): Promise<void> {
   if (!isApp) return;
   try {
     const s = await api.request.getSyncStats({});
-    $<HTMLElement>("sync-bar").style.width = s.total
-      ? `${Math.min(100, (s.downloaded / s.total) * 100)}%`
-      : "0%";
-    setAnimatedText($<HTMLElement>("sync-count"),
-      T("sync.count", { downloaded: s.downloaded, total: s.total }));
-    const btn = $<HTMLButtonElement>("btn-sync-missing");
-    if (s.missing > 0) {
-      setAnimatedText($<HTMLElement>("sync-text"),
-        T("sync.missing", { missing: s.missing }));
-      btn.textContent = T("sync.downloadMissingN", { missing: s.missing });
-      btn.classList.remove("opacity-50", "pointer-events-none");
-    } else {
-      setAnimatedText($<HTMLElement>("sync-text"),
-        T("sync.allDone"));
-      btn.textContent = T("sync.synced");
-      btn.classList.add("opacity-50", "pointer-events-none");
-    }
+    state.syncTotal = s.total;
+    state.syncDone = s.downloaded;
+    renderSync();
   } catch {
     // sin red
   }
 }
 
-$<HTMLButtonElement>("btn-sync-missing").addEventListener("click", () =>
-  withBusy("btn-sync-missing", async () => {
-    if (!guard()) return;
-    $<HTMLDivElement>("dev-log").textContent = "";
-    await api.request.downloadMissing({});
-    await refreshDownloadedIds();
-    await renderSyncStats();
-  }),
-);
-$<HTMLButtonElement>("btn-sync-all").addEventListener("click", () =>
-  withBusy("btn-sync-all", async () => {
-    if (!guard()) return;
-    $<HTMLDivElement>("dev-log").textContent = "";
-    await api.request.downloadAll({});
-    await refreshDownloadedIds();
-    await renderSyncStats();
-    await renderHistory();
-  }),
-);
-
-// ---- Historial ----
-async function renderHistory(): Promise<void> {
+async function refreshDownloaded(): Promise<void> {
   if (!isApp) return;
   try {
-    const res = await api.request.getHistory({});
-    const list = $<HTMLElement>("history-list");
-    list.textContent = "";
-    if (!res.items.length) {
-      const p = document.createElement("p");
-      p.className = "text-xs text-ink-500";
-      p.textContent = T("history.empty");
-      list.appendChild(p);
-      return;
-    }
-    for (const it of res.items) {
-      const row = document.createElement("div");
-      row.className = "flex items-center justify-between gap-3 text-xs py-1";
-      const label = document.createElement("span");
-      label.className = "text-ink-300 truncate";
-      label.textContent =
-        it.target === "favoritos" ? T("history.favoritesSync") : it.target;
-      const meta = document.createElement("span");
-      meta.className = "text-ink-500 shrink-0 tabular-nums";
-      const d = new Date(it.ts);
-      meta.textContent = `${it.format} · ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
-      row.appendChild(label);
-      row.appendChild(meta);
-      list.appendChild(row);
-    }
-  } catch {
-    // sin red
-  }
-}
-
-// ---- Render de estado ----
-function renderVersionLine(
-  el: HTMLElement,
-  v: DepVersionInfo,
-): void {
-  el.textContent = "";
-  if (v.current) {
-    const s = document.createElement("span");
-    s.className = "text-ink-400 tabular-nums";
-    s.textContent = `v${v.current}`;
-    el.appendChild(s);
-  }
-  if (v.hasUpdate && v.latest) {
-    const b = document.createElement("span");
-    b.className =
-      "px-1.5 py-0.5 rounded-md bg-brand-500/15 text-brand-300 text-[10px] font-semibold tabular-nums";
-    b.textContent = `${T("version.new")} v${v.latest}`;
-    el.appendChild(b);
-  }
-}
-
-function renderDeps(d: DepsStatus): void {
-  const ytIcon = $<HTMLElement>("deps-ytdlp-icon");
-  const ytSub = $<HTMLElement>("deps-ytdlp-sub");
-  ytIcon.textContent = d.ytdlpPresent ? "✓" : "!";
-  ytIcon.className = d.ytdlpPresent
-    ? "text-base leading-none text-emerald-400"
-    : "text-base leading-none text-amber-400";
-  ytSub.textContent = d.ytdlpPath ?? (d.ytdlpPresent ? T("tools.ready") : T("tools.notInstalled"));
-  $<HTMLElement>("deps-ytdlp").classList.toggle(
-    "border-amber-600/40",
-    !d.ytdlpPresent,
-  );
-  renderVersionLine($<HTMLElement>("deps-ytdlp-version"), d.ytdlpVersion);
-
-  const ffIcon = $<HTMLElement>("deps-ffmpeg-icon");
-  const ffSub = $<HTMLElement>("deps-ffmpeg-sub");
-  ffIcon.textContent = d.ffmpegPresent ? "✓" : "!";
-  ffIcon.className = d.ffmpegPresent
-    ? "text-base leading-none text-emerald-400"
-    : "text-base leading-none text-amber-400";
-  ffSub.textContent = d.ffmpegDir
-    ? T("tools.ownBinary")
-    : d.ffmpegPresent
-      ? T("tools.systemBinary")
-      : T("tools.notInstalled");
-  $<HTMLElement>("deps-ffmpeg").classList.toggle(
-    "border-amber-600/40",
-    !d.ffmpegPresent,
-  );
-  renderVersionLine($<HTMLElement>("deps-ffmpeg-version"), d.ffmpegVersion);
-
-  $<HTMLButtonElement>("btn-install-deps").classList.toggle("hidden", d.ready);
-}
-
-function renderAccount(c: ConfigPayload): void {
-  const logged = c.hasToken;
-  const avatar = $<HTMLElement>("account-avatar");
-  avatar.textContent = (c.username?.[0] ?? "?").toUpperCase();
-  avatar.className = logged
-    ? "w-11 h-11 rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 flex items-center justify-center font-display font-semibold text-white shrink-0 shadow-lg shadow-brand-600/25"
-    : "w-11 h-11 rounded-xl bg-ink-800 border border-ink-700 flex items-center justify-center font-display font-semibold text-ink-400 shrink-0";
-
-  $<HTMLElement>("account-text").textContent = logged
-    ? c.username || T("account.loggedIn")
-    : T("account.notLogged");
-  $<HTMLElement>("account-user").textContent = logged
-    ? T("account.readyPrompt")
-    : T("account.loginPrompt");
-  const chip = $<HTMLElement>("account-chip");
-  chip.textContent = logged ? T("account.sessionChip") : T("account.noSessionChip");
-  chip.className = logged
-    ? "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-brand-500/15 text-brand-300"
-    : "text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-ink-800 text-ink-400";
-
-  // Con sesión: se ocultan iniciar sesión y pegar token; solo cerrar sesión.
-  $<HTMLButtonElement>("btn-login").classList.toggle("hidden", logged);
-  $<HTMLButtonElement>("btn-token").classList.toggle("hidden", logged);
-  $<HTMLButtonElement>("btn-logout").classList.toggle("hidden", !logged);
-}
-
-function renderLikes(count: number | null): void {
-  const el = $<HTMLElement>("likes-count");
-  if (count == null) {
-    el.textContent = "—";
-  } else {
-    el.textContent = String(count);
-    el.classList.add("text-white");
-  }
-}
-
-function setSidebar(ok: boolean, text: string): void {
-  const dot = $<HTMLElement>("sidebar-dot");
-  dot.className = `w-2 h-2 rounded-full ${
-    ok ? "bg-emerald-400" : "bg-amber-400"
-  }`;
-  $<HTMLElement>("sidebar-text").textContent = text;
-}
-
-function applyTheme(theme: string): void {
-  document.documentElement.dataset.theme = theme === "light" ? "light" : "dark";
-}
-
-async function loadStatus(): Promise<StatusSnapshot | null> {
-  if (!isApp) {
-    setSidebar(false, T("sidebar.preview"));
-    return null;
-  }
-  try {
-    const s: StatusSnapshot = await api.request.getStatus({});
-    renderDeps(s.deps);
-    renderAccount(s.config);
-    renderLikes(s.likesCount);
-    seedSettings(s.config);
-    if (!s.deps.ready) setSidebar(false, T("sidebar.installDeps"));
-    else if (!s.config.hasToken) setSidebar(false, T("sidebar.login"));
-    else setSidebar(true, T("sidebar.ready", { count: s.likesCount ?? "?" }));
-    return s;
-  } catch (err) {
-    toast(T("toast.statusError", { message: (err as Error).message }), "error", true);
-    return null;
-  }
-}
-
-// ---- Acciones ----
-async function withBusy(
-  btnId: string,
-  fn: () => Promise<void>,
-): Promise<void> {
-  const btn = document.getElementById(btnId) as HTMLButtonElement | null;
-  let spinner: HTMLSpanElement | null = null;
-  if (btn) {
-    btn.disabled = true;
-    btn.classList.add("opacity-70", "pointer-events-none");
-    spinner = document.createElement("span");
-    spinner.className = "spinner mr-2 align-middle";
-    btn.prepend(spinner);
-  }
-  try {
-    await fn();
-  } catch (err) {
-    toast((err as Error).message, "error", true);
-  } finally {
-    spinner?.remove();
-    if (btn) {
-      btn.disabled = false;
-      btn.classList.remove("opacity-70", "pointer-events-none");
-    }
-  }
-}
-
-const guard = (): boolean => {
-  if (isApp) return true;
-  toast(T("toast.notConnected"), "error", true);
-  return false;
-};
-
-$<HTMLButtonElement>("btn-install-deps").addEventListener("click", () =>
-  runDepsInstall(),
-);
-
-$<HTMLButtonElement>("btn-login").addEventListener("click", () =>
-  withBusy("btn-login", async () => {
-    if (!guard()) return;
-    toast(T("toast.loginBrowser"));
-    try {
-      await api.request.login({});
-      toast(T("toast.sessionStarted"), "success");
-      await loadStatus();
-    } catch (err) {
-      toast((err as Error).message, "error", true);
-      openTokenModal();
-    }
-  }),
-);
-
-function openTokenModal(): void {
-  const modal = $<HTMLElement>("token-modal");
-  modal.classList.remove("hidden");
-  $<HTMLInputElement>("token-input").value = "";
-  $<HTMLInputElement>("token-input").focus();
-}
-
-$<HTMLButtonElement>("btn-token").addEventListener("click", () => {
-  if (!guard()) return;
-  openTokenModal();
-});
-
-const closeTokenModal = () => {
-  $<HTMLElement>("token-modal").classList.add("hidden");
-};
-$<HTMLButtonElement>("token-cancel").addEventListener("click", closeTokenModal);
-document
-  .querySelectorAll<HTMLElement>("[data-close-token]")
-  .forEach((el) => el.addEventListener("click", closeTokenModal));
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    closeTokenModal();
-    closeConfigModal();
-  }
-});
-$<HTMLButtonElement>("token-confirm").addEventListener("click", () =>
-  withBusy("token-confirm", async () => {
-    if (!guard()) return;
-    const token = $<HTMLInputElement>("token-input").value.trim();
-    if (!token) {
-      toast(T("toast.pasteTokenFirst"), "warn");
-      return;
-    }
-    await api.request.loginWithToken({ token });
-    closeTokenModal();
-    toast(T("toast.tokenSaved"), "success");
-    await loadStatus();
-  }),
-);
-
-$<HTMLButtonElement>("btn-logout").addEventListener("click", () =>
-  withBusy("btn-logout", async () => {
-    if (!guard()) return;
-    await api.request.logout({});
-    toast(T("toast.loggedOut"), "success");
-    await loadStatus();
-  }),
-);
-
-$<HTMLButtonElement>("btn-refresh-likes").addEventListener("click", () =>
-  withBusy("btn-refresh-likes", async () => {
-    if (!guard()) return;
-    const res = await api.request.refreshLikes({});
-    renderLikes(res.count);
-    setSidebar(true, T("sidebar.ready", { count: res.count }));
-    toast(T("toast.likesUpdated", { count: res.count }), "success");
-  }),
-);
-
-$<HTMLButtonElement>("btn-download-all").addEventListener("click", () =>
-  withBusy("btn-download-all", async () => {
-    if (!guard()) return;
-    showView("download");
-    $<HTMLDivElement>("dev-log").textContent = "";
-    await api.request.downloadAll({});
-    await refreshDownloadedIds();
-    await renderSyncStats();
-  }),
-);
-
-// ---- Control de descargas: pausar / reanudar / detener ----
-let downloadPaused = false;
-
-$<HTMLButtonElement>("btn-pause").addEventListener("click", () => {
-  if (!guard()) return;
-  const btn = $<HTMLButtonElement>("btn-pause");
-  if (downloadPaused) {
-    api.request.resumeDownload({});
-    btn.textContent = T("dl.pause");
-    downloadPaused = false;
-  } else {
-    api.request.pauseDownload({});
-    btn.textContent = T("dl.resume");
-    downloadPaused = true;
-  }
-});
-
-$<HTMLButtonElement>("btn-stop").addEventListener("click", () => {
-  if (!guard()) return;
-  downloadStopped = true;
-  clearQueue();
-  setDownloading(false);
-  resetDownloadUI();
-  api.request.cancelDownload({});
-});
-
-function clearQueue(): void {
-  downloadQueue = [];
-  currentQueueItem = null;
-  queuePage = 0;
-  renderQueue();
-}
-
-// ---- Búsqueda ----
-function renderSearchEmpty(title: string, detail: string): void {
-  const results = $<HTMLElement>("search-results");
-  results.textContent = "";
-  const box = document.createElement("div");
-  box.className =
-    "flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink-700 py-14 px-6 text-center";
-  box.innerHTML = `
-    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="1.5" stroke-linecap="round" class="text-ink-600 mb-3">
-      <circle cx="10.5" cy="10.5" r="6.5" />
-      <path d="m15.5 15.5 4.5 4.5" />
-    </svg>
-    <p class="text-sm font-medium text-ink-200">${escapeHtml(title)}</p>
-    <p class="text-xs text-ink-500 mt-1 max-w-xs">${escapeHtml(detail)}</p>`;
-  results.appendChild(box);
-}
-
-async function doSearch(): Promise<void> {
-  if (!guard()) return;
-  const input = $<HTMLInputElement>("search-input");
-  const query = input.value.trim();
-  const results = $<HTMLElement>("search-results");
-
-  if (!query) {
-    renderSearchEmpty(
-      T("search.typeSomething"),
-      T("search.typeDetail"),
-    );
-    return;
-  }
-
-  results.textContent = "";
-  results.appendChild(
-    loadingState(T("search.searching", { query })),
-  );
-
-  try {
-    const res = await api.request.searchSoundcloud({ query });
-    results.textContent = "";
-    if (!res.tracks.length) {
-      renderSearchEmpty(
-        T("search.noResults", { query }),
-        T("search.noResultsDetail"),
-      );
-      return;
-    }
-    for (const t of res.tracks) results.appendChild(trackCard(t));
-  } catch (err) {
-    results.textContent = "";
-    renderSearchEmpty(T("search.failed"), (err as Error).message);
-  }
-}
-
-function trackCard(t: LikedTrackPayload): HTMLElement {
-  const card = document.createElement("div");
-  card.className =
-    "flex items-center gap-4 rounded-xl border border-ink-800 bg-ink-900/70 px-4 py-3 hover:border-ink-700 hover:bg-ink-850/70 transition-colors";
-
-  const thumb = document.createElement("div");
-  thumb.className =
-    "w-10 h-10 shrink-0 rounded-lg bg-ink-800 flex items-center justify-center text-ink-500";
-  thumb.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>`;
-
-  const info = document.createElement("div");
-  info.className = "flex-1 min-w-0";
-  const title = document.createElement("p");
-  title.className = "text-sm font-medium text-ink-100 truncate";
-  title.textContent = t.title;
-  const sub = document.createElement("p");
-  sub.className = "text-xs text-ink-400 truncate";
-  sub.textContent = t.uploader ?? "SoundCloud";
-  info.appendChild(title);
-  info.appendChild(sub);
-
-  const actions = document.createElement("div");
-  actions.className = "flex items-center gap-2 shrink-0";
-
-  const btn = makeDownloadButton(t);
-
-  actions.appendChild(btn);
-
-  card.appendChild(thumb);
-  card.appendChild(info);
-  card.appendChild(actions);
-  return card;
-}
-
-$<HTMLButtonElement>("btn-search").addEventListener("click", () =>
-  withBusy("btn-search", doSearch),
-);
-$<HTMLInputElement>("search-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") withBusy("btn-search", doSearch);
-});
-
-// Descargar por enlace
-$<HTMLButtonElement>("btn-download-url").addEventListener("click", () =>
-  withBusy("btn-download-url", async () => {
-    if (!guard()) return;
-    const url = $<HTMLInputElement>("url-input").value.trim();
-    if (!url) {
-      toast(T("toast.urlEmpty"), "warn");
-      return;
-    }
-    showView("download");
-    $<HTMLDivElement>("dev-log").textContent = "";
-    $<HTMLParagraphElement>("dl-title").textContent = url;
-    showDlControls();
-    await api.request.downloadUrl({ url });
-    await refreshDownloadedIds();
-    await renderSyncStats();
-    await renderHistory();
-  }),
-);
-$<HTMLInputElement>("url-input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $<HTMLButtonElement>("btn-download-url").click();
-});
-
-// ---- Editor de plantilla de nombre (chips) ----
-const VAR_KEYS: Record<string, string> = {
-  title: "var.title",
-  uploader: "var.uploader",
-  artist: "var.artist",
-  album: "var.album",
-  id: "var.id",
-  playlist_index: "var.playlist_index",
-  ext: "var.ext",
-};
-
-const TEMPLATE_EXAMPLES: Record<string, string> = {
-  title: "Mi canción",
-  uploader: "MiArtista",
-  artist: "Artista",
-  album: "Álbum",
-  id: "123456",
-  playlist_index: "3",
-  ext: "mp3",
-};
-
-function makeChip(variable: string): HTMLSpanElement {
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.contentEditable = "false";
-  chip.setAttribute("data-var", variable);
-  chip.textContent = VAR_KEYS[variable] ? T(VAR_KEYS[variable]) : `%(${variable})s`;
-  chip.title = `%(${variable})s`;
-  return chip;
-}
-
-function renderTemplateToEditor(template: string): void {
-  const editor = $<HTMLElement>("template-editor");
-  editor.textContent = "";
-  const re = /%\(([^)]+)\)s/g;
-  const frag = document.createDocumentFragment();
-  let m: RegExpExecArray | null;
-  let lastIndex = 0;
-  while ((m = re.exec(template))) {
-    if (m.index > lastIndex) {
-      frag.appendChild(document.createTextNode(template.slice(lastIndex, m.index)));
-    }
-    frag.appendChild(makeChip(m[1]));
-    lastIndex = m.index + m[0].length;
-  }
-  if (lastIndex < template.length) {
-    frag.appendChild(document.createTextNode(template.slice(lastIndex)));
-  }
-  editor.appendChild(frag);
-}
-
-function serializeEditor(): string {
-  const editor = $<HTMLElement>("template-editor");
-  let out = "";
-  for (const node of editor.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out += node.textContent ?? "";
-    } else if (node instanceof HTMLElement && node.dataset.var) {
-      out += `%(${node.dataset.var})s`;
-    } else {
-      out += (node as HTMLElement).textContent ?? "";
-    }
-  }
-  return out;
-}
-
-function appendVariableToEditor(variable: string): void {
-  const editor = $<HTMLElement>("template-editor");
-  const chip = makeChip(variable);
-  const sel = window.getSelection();
-  if (sel && sel.rangeCount && editor.contains(sel.anchorNode)) {
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    range.insertNode(chip);
-    range.setStartAfter(chip);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  } else {
-    editor.appendChild(chip);
-  }
-  editor.focus();
-  updateTemplatePreview();
-}
-
-function updateTemplatePreview(): void {
-  const tpl = serializeEditor();
-  const preview = tpl.replace(
-    /%\(([^)]+)\)s/g,
-    (_m, v: string) => TEMPLATE_EXAMPLES[v] ?? `[${v}]`,
-  );
-  $<HTMLElement>("template-preview").textContent =
-    preview ? T("settings.preview", { name: preview }) : "";
-}
-
-document
-  .querySelectorAll<HTMLButtonElement>("#template-chips .chip-btn")
-  .forEach((btn) => {
-    btn.addEventListener("click", () => {
-      appendVariableToEditor(btn.dataset.var ?? "");
-    });
-  });
-$<HTMLElement>("template-editor").addEventListener("input", updateTemplatePreview);
-$<HTMLElement>("template-editor").addEventListener("keydown", (e) => {
-  if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
-    e.preventDefault();
-  }
-});
-
-function seedSettings(c: ConfigPayload): void {
-  $<HTMLInputElement>("set-outdir").value = c.outdir ?? "";
-  const format = c.format ?? "m4a";
-  $<HTMLSelectElement>("set-format").value = format;
-  renderBitrateOptions(format, c.bitrate ?? c.quality);
-  $<HTMLSelectElement>("set-theme").value = c.theme ?? "dark";
-  if (!langUserSet) {
-    setLang(resolveLang(c.lang));
-  }
-  renderTemplateToEditor(c.filenameTemplate ?? "%(title)s - %(artist)s");
-  updateTemplatePreview();
-  $<HTMLInputElement>("set-skip").checked = c.skipExisting ?? true;
-  applyTheme(c.theme ?? "dark");
-}
-
-/** Mantiene el selector de idioma sincronizado con la lengua activa. */
-function renderLanguageSelect(): void {
-  $<HTMLSelectElement>("set-lang").value = currentLang;
-}
-
-$<HTMLSelectElement>("set-lang").addEventListener("change", () => {
-  langUserSet = true;
-  setLang(resolveLang($<HTMLSelectElement>("set-lang").value), true);
-});
-
-$<HTMLSelectElement>("set-theme").addEventListener("change", () => {
-  applyTheme($<HTMLSelectElement>("set-theme").value);
-});
-
-/** Bitrates disponibles según el formato. AAC/Opus/Vorbis no superan lo que
- *  aporta la fuente (AAC 256k); MP3 es menos eficiente, así que necesita ~320k
- *  para igualar esa calidad. */
-const FORMAT_BITRATES: Record<string, string[]> = {
-  m4a: ["256K", "192K", "128K", "96K", "64K"],
-  mp3: ["320K", "256K", "192K", "128K", "96K", "64K"],
-  opus: ["160K", "128K", "96K", "64K"],
-  vorbis: ["192K", "160K", "128K", "96K", "64K"],
-  flac: [],
-  wav: [],
-  original: [],
-};
-
-/** Bitrate por defecto por formato (coincide con el del proceso main). */
-const FORMAT_DEFAULT_BITRATE: Record<string, string> = {
-  m4a: "256K",
-  mp3: "320K",
-  opus: "128K",
-  vorbis: "192K",
-};
-
-/** Reconstruye las opciones de bitrate según el formato y elige un valor
- *  válido (el guardado si aplica, si no el default del formato). */
-function renderBitrateOptions(format: string, preferred?: string): void {
-  const options = FORMAT_BITRATES[format] ?? [];
-  const select = $<HTMLSelectElement>("set-bitrate");
-  select.textContent = "";
-  for (const b of options) {
-    const opt = document.createElement("option");
-    opt.value = b;
-    opt.textContent = b.replace("K", " kbps");
-    select.appendChild(opt);
-  }
-  const disabled = options.length === 0;
-  select.disabled = disabled;
-  select.classList.toggle("opacity-40", disabled);
-  const fallback = FORMAT_DEFAULT_BITRATE[format];
-  if (preferred && options.includes(preferred)) {
-    select.value = preferred;
-  } else if (fallback && options.includes(fallback)) {
-    select.value = fallback;
-  } else if (options.length > 0) {
-    select.value = options[0];
-  }
-}
-
-$<HTMLSelectElement>("set-format").addEventListener("change", () => {
-  renderBitrateOptions($<HTMLSelectElement>("set-format").value);
-});
-
-function setOutdirError(show: boolean): void {
-  const input = $<HTMLInputElement>("set-outdir");
-  const err = $<HTMLElement>("set-outdir-error");
-  input.classList.toggle("border-red-500", show);
-  input.classList.toggle("focus:border-red-500", show);
-  input.classList.toggle("border-ink-700", !show);
-  input.classList.toggle("focus:border-brand-500", !show);
-  err.classList.toggle("hidden", !show);
-}
-
-$<HTMLInputElement>("set-outdir").addEventListener("input", () => {
-  if ($<HTMLInputElement>("set-outdir").value.trim()) setOutdirError(false);
-});
-
-$<HTMLButtonElement>("btn-pick-folder").addEventListener("click", () =>
-  withBusy("btn-pick-folder", async () => {
-    if (!guard()) return;
-    const res = await api.request.selectFolder({});
-    if (res.path) {
-      $<HTMLInputElement>("set-outdir").value = res.path;
-      setOutdirError(false);
-    }
-  }),
-);
-
-$<HTMLButtonElement>("btn-save-settings").addEventListener("click", () =>
-  withBusy("btn-save-settings", async () => {
-    if (!guard()) return;
-    const outdir = $<HTMLInputElement>("set-outdir").value.trim();
-    if (!outdir) {
-      setOutdirError(true);
-      toast(T("settings.outdirEmpty"), "warn");
-      $<HTMLInputElement>("set-outdir").focus();
-      return;
-    }
-    const template = serializeEditor().trim();
-    if (!template) {
-      toast(T("settings.templateEmpty"), "warn");
-      return;
-    }
-    if (!/\([^)]+\)/.test(template)) {
-      toast(T("settings.templateNoVar"), "warn");
-      return;
-    }
-    await api.request.saveConfig({
-      outdir,
-      format: $<HTMLSelectElement>("set-format").value,
-      bitrate: $<HTMLSelectElement>("set-bitrate").value,
-      filenameTemplate: template,
-      theme: $<HTMLSelectElement>("set-theme").value,
-      lang: currentLang,
-      skipExisting: $<HTMLInputElement>("set-skip").checked,
-    });
-    toast(T("settings.saved"), "success");
-    await loadStatus();
-  }),
-);
-
-// ---- Exportar / importar configuración ----
-function openConfigModal(mode: "export" | "import", text = ""): void {
-  const modal = $<HTMLElement>("config-modal");
-  modal.classList.remove("hidden");
-  $<HTMLElement>("config-modal-title").textContent =
-    mode === "export" ? T("configModal.export") : T("configModal.import");
-  const ta = $<HTMLTextAreaElement>("config-text");
-  ta.value = text;
-  ta.readOnly = mode === "export";
-  $<HTMLButtonElement>("config-apply").classList.toggle("hidden", mode !== "import");
-  $<HTMLButtonElement>("config-copy").classList.toggle("hidden", mode !== "export");
-}
-const closeConfigModal = () => $<HTMLElement>("config-modal").classList.add("hidden");
-document
-  .querySelectorAll<HTMLElement>("[data-close-config]")
-  .forEach((el) => el.addEventListener("click", closeConfigModal));
-$<HTMLButtonElement>("config-cancel").addEventListener("click", closeConfigModal);
-
-$<HTMLButtonElement>("btn-export-config").addEventListener("click", () =>
-  withBusy("btn-export-config", async () => {
-    if (!guard()) return;
-    const res = await api.request.exportConfig({});
-    openConfigModal("export", res.json);
-  }),
-);
-$<HTMLButtonElement>("config-copy").addEventListener("click", async () => {
-  const text = $<HTMLTextAreaElement>("config-text").value;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    $<HTMLTextAreaElement>("config-text").select();
-    document.execCommand("copy");
-  }
-  toast(T("configModal.copied"), "success");
-});
-$<HTMLButtonElement>("btn-import-config").addEventListener("click", () =>
-  openConfigModal("import"),
-);
-$<HTMLButtonElement>("config-apply").addEventListener("click", () =>
-  withBusy("config-apply", async () => {
-    if (!guard()) return;
-    await api.request.importConfig({
-      json: $<HTMLTextAreaElement>("config-text").value,
-    });
-    closeConfigModal();
-    toast(T("configModal.imported"), "success");
-    await loadStatus();
-  }),
-);
-
-
-// ---- Estadísticas (vista desarrollador) ----
-async function renderStats(): Promise<void> {
-  if (!isApp) return;
-  try {
-    const res = await api.request.getHistory({});
-    const items = (res.items as HistoryItemPayload[]).filter((it) => it.ok);
-    const byFormat: Record<string, number> = {};
-    let last7 = 0;
-    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
-    for (const it of items) {
-      byFormat[it.format] = (byFormat[it.format] ?? 0) + 1;
-      if (it.ts >= weekAgo) last7++;
-    }
-    const grid = $<HTMLElement>("stats-grid");
-    grid.textContent = "";
-    const cells: [string, string][] = [
-      [T("stats.total"), String(items.length)],
-      [T("stats.last7"), String(last7)],
-      [T("stats.formats"), Object.entries(byFormat).map(([f, n]) => `${f} ×${n}`).join(" · ") || "—"],
-    ];
-    for (const [label, value] of cells) {
-      const cell = document.createElement("div");
-      cell.className =
-        "rounded-xl border border-ink-800 bg-ink-850/60 px-3 py-2.5";
-      const l = document.createElement("p");
-      l.className = "text-[11px] text-ink-400";
-      l.textContent = label;
-      const v = document.createElement("p");
-      v.className = "text-sm font-semibold text-ink-100 mt-0.5 tabular-nums";
-      v.textContent = value;
-      cell.appendChild(l);
-      cell.appendChild(v);
-      grid.appendChild(cell);
-    }
-  } catch {
-    // sin red
-  }
-}
-
-// ---- Limpieza de no favoritos ----
-let cleanupTimer: ReturnType<typeof setInterval> | null = null;
-
-function openCleanupModal(count: number): void {
-  $<HTMLElement>("cleanup-modal").classList.remove("hidden");
-  $<HTMLElement>("cleanup-count").textContent = String(count);
-  const btn = $<HTMLButtonElement>("cleanup-confirm");
-  btn.disabled = true;
-  let remaining = 3;
-  btn.textContent = T("cleanup.confirmN", { n: remaining });
-  cleanupTimer = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) {
-      if (cleanupTimer) clearInterval(cleanupTimer);
-      cleanupTimer = null;
-      btn.disabled = false;
-      btn.textContent = T("cleanup.confirm", { count });
-    } else {
-      btn.textContent = T("cleanup.confirmN", { n: remaining });
-    }
-  }, 1000);
-}
-
-function closeCleanupModal(): void {
-  if (cleanupTimer) clearInterval(cleanupTimer);
-  cleanupTimer = null;
-  $<HTMLElement>("cleanup-modal").classList.add("hidden");
-}
-
-$<HTMLButtonElement>("btn-cleanup").addEventListener("click", () =>
-  withBusy("btn-cleanup", async () => {
-    if (!guard()) return;
-    const res = await api.request.cleanupPreview({});
-    if (res.count === 0) {
-      toast(T("toast.cleanupNone"), "info");
-      return;
-    }
-    openCleanupModal(res.count);
-  }),
-);
-
-$<HTMLButtonElement>("cleanup-cancel").addEventListener("click", closeCleanupModal);
-document
-  .querySelectorAll<HTMLElement>("[data-close-cleanup]")
-  .forEach((el) => el.addEventListener("click", closeCleanupModal));
-
-$<HTMLButtonElement>("cleanup-confirm").addEventListener("click", () =>
-  withBusy("cleanup-confirm", async () => {
-    if (!guard()) return;
-    const res = await api.request.cleanupNonFavorites({});
-    closeCleanupModal();
-    if (res.removed.length) {
-      toast(T("toast.cleanupRemoved", { count: res.removed.length }), "success");
-    } else {
-      toast(T("toast.cleanupNone"), "info");
-    }
-    await refreshDownloadedIds();
-    await renderSyncStats();
-  }),
-);
-
-// ---- Colección (favoritos / playlists) ----
-const collectionState = {
-  source: "favorites" as "favorites" | "playlists",
-  playlistUrl: null as string | null,
-  query: "",
-  playlistsCache: null as { id: string; title: string; url: string }[] | null,
-  playlistTracksCache: null as { url: string; tracks: LikedTrackPayload[] } | null,
-};
-
-function filterByQuery(tracks: LikedTrackPayload[]): LikedTrackPayload[] {
-  const q = collectionState.query.trim().toLowerCase();
-  if (!q) return tracks;
-  return tracks.filter(
-    (t) =>
-      t.title.toLowerCase().includes(q) ||
-      (t.uploader ?? "").toLowerCase().includes(q),
-  );
-}
-
-function setSourceTab(active: "favorites" | "playlists"): void {
-  for (const name of ["favorites", "playlists"] as const) {
-    const btn = $<HTMLButtonElement>(`src-${name}`);
-    const on = name === active;
-    btn.classList.toggle("bg-brand-600", on);
-    btn.classList.toggle("text-white", on);
-    btn.classList.toggle("hover:bg-brand-500", on);
-  }
-}
-
-async function renderCollection(): Promise<void> {
-  setSourceTab(collectionState.source);
-  const content = $<HTMLElement>("collection-content");
-  content.textContent = "";
-
-  // El buscador solo aplica a listas de canciones.
-  const showSearch =
-    collectionState.source === "favorites" || !!collectionState.playlistUrl;
-  $<HTMLElement>("collection-search-wrap").classList.toggle(
-    "hidden",
-    !showSearch,
-  );
-  if (showSearch) {
-    $<HTMLInputElement>("collection-search").value = collectionState.query;
-  }
-
-  if (collectionState.source === "favorites") {
-    await renderCollectionFavorites();
-  } else if (collectionState.playlistUrl) {
-    await renderCollectionPlaylistTracks();
-  } else {
-    await renderCollectionPlaylists();
-  }
-}
-
-$<HTMLInputElement>("collection-search").addEventListener("input", () => {
-  collectionState.query = $<HTMLInputElement>("collection-search").value;
-  renderCollection();
-});
-
-function collectionTrackRow(t: LikedTrackPayload): HTMLElement {
-  const row = document.createElement("div");
-  row.className =
-    "flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-900/70 px-3 py-2 hover:bg-ink-850/70 transition-colors";
-  const info = document.createElement("div");
-  info.className = "flex-1 min-w-0";
-  const title = document.createElement("p");
-  title.className = "text-sm text-ink-100 truncate";
-  title.textContent = t.title;
-  const sub = document.createElement("p");
-  sub.className = "text-xs text-ink-400 truncate";
-  sub.textContent = t.uploader ?? "SoundCloud";
-  info.appendChild(title);
-  info.appendChild(sub);
-
-  const btn = makeDownloadButton(t);
-
-  row.appendChild(info);
-  row.appendChild(btn);
-  return row;
-}
-
-function startDownloadView(label: string): void {
-  showView("download");
-  $<HTMLDivElement>("dev-log").textContent = "";
-  resetDownloadUI();
-  $<HTMLParagraphElement>("dl-title").textContent = label;
-  setAnimatedText($<HTMLParagraphElement>("dl-count"), "Preparando...");
-  showDlControls();
-  setDownloading(true);
-}
-
-async function renderCollectionFavorites(): Promise<void> {
-  const content = $<HTMLElement>("collection-content");
-  if (!isApp) return;
-
-  let tracks: LikedTrackPayload[] = [];
-  try {
-    const cache = await api.request.getLikesCache({});
-    if (cache.tracks.length) {
-      tracks = cache.tracks;
-    } else {
-      const res = await api.request.refreshLikes({});
-      tracks = res.tracks;
-    }
-  } catch {
-    tracks = [];
-  }
-
-  const filtered = filterByQuery(tracks);
-  if (!filtered.length) {
-    content.appendChild(
-      emptyState(
-        T("collection.noResults"),
-        collectionState.query
-          ? T("collection.noFavMatch", { query: collectionState.query })
-          : T("collection.noFavs"),
-      ),
-    );
-    return;
-  }
-
-  const header = document.createElement("div");
-  header.className = "flex items-center justify-between gap-3 flex-wrap";
-  const h = document.createElement("p");
-  h.className = "text-sm text-ink-300";
-  h.textContent = collectionState.query
-    ? T("collection.countOf", { filtered: filtered.length, total: tracks.length })
-    : T("collection.count", { total: tracks.length });
-  const dl = document.createElement("button");
-  dl.className =
-    "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
-  dl.textContent = T("collection.downloadAll");
-  dl.addEventListener("click", () =>
-    withBusy("", async () => {
-      if (!guard()) return;
-      startDownloadView(T("collection.yourFavs"));
-      await api.request.downloadAll({});
-    await refreshDownloadedIds();
-      await renderSyncStats();
-      await renderHistory();
-    }),
-  );
-  header.appendChild(h);
-  header.appendChild(dl);
-
-  const list = document.createElement("div");
-  list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
-  for (const t of filtered) list.appendChild(collectionTrackRow(t));
-
-  content.appendChild(header);
-  content.appendChild(list);
-}
-
-async function renderCollectionPlaylists(): Promise<void> {
-  const content = $<HTMLElement>("collection-content");
-  if (!isApp) return;
-
-  if (!collectionState.playlistsCache) {
-    content.appendChild(loadingState(T("collection.loadingPlaylists")));
-    try {
-      const res = await api.request.getPlaylists({});
-      collectionState.playlistsCache = res.playlists;
-    } catch (err) {
-      content.appendChild(emptyState(T("collection.playlistsFailed"), (err as Error).message));
-      return;
-    }
-  }
-
-  const playlists = collectionState.playlistsCache;
-  if (!playlists?.length) {
-    content.appendChild(emptyState(T("collection.noPlaylists"), T("collection.noPlaylistsDetail")));
-    return;
-  }
-
-  const list = document.createElement("div");
-  list.className = "space-y-1.5";
-  for (const pl of playlists) {
-    const row = document.createElement("button");
-    row.className =
-      "w-full flex items-center gap-3 rounded-xl border border-ink-800 bg-ink-900/70 px-4 py-3 text-left hover:bg-ink-850/70 hover:border-ink-700 transition-colors";
-    const icon = document.createElement("span");
-    icon.className =
-      "w-9 h-9 shrink-0 rounded-lg bg-ink-800 flex items-center justify-center text-ink-500";
-    icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>`;
-    const label = document.createElement("span");
-    label.className = "flex-1 min-w-0 text-sm font-medium text-ink-100 truncate";
-    label.textContent = pl.title;
-    const arrow = document.createElement("span");
-    arrow.className = "text-ink-500";
-    arrow.textContent = "›";
-    row.appendChild(icon);
-    row.appendChild(label);
-    row.appendChild(arrow);
-    row.addEventListener("click", () => {
-      collectionState.playlistUrl = pl.url;
-      renderCollection();
-    });
-    list.appendChild(row);
-  }
-  content.appendChild(list);
-}
-
-async function renderCollectionPlaylistTracks(): Promise<void> {
-  const content = $<HTMLElement>("collection-content");
-  if (!isApp) return;
-  const url = collectionState.playlistUrl!;
-
-  if (
-    !collectionState.playlistTracksCache ||
-    collectionState.playlistTracksCache.url !== url
-  ) {
-    content.appendChild(loadingState(T("collection.loadingTracks")));
-    try {
-      const res = await api.request.getPlaylistTracks({ url });
-      collectionState.playlistTracksCache = { url, tracks: res.tracks };
-    } catch (err) {
-      content.appendChild(emptyState(T("collection.tracksFailed"), (err as Error).message));
-      return;
-    }
-  }
-
-  const tracks = collectionState.playlistTracksCache!.tracks;
-  const filtered = filterByQuery(tracks);
-
-  const top = document.createElement("div");
-  top.className = "flex items-center justify-between gap-3 flex-wrap";
-  const left = document.createElement("div");
-  left.className = "flex items-center gap-2";
-  const back = document.createElement("button");
-  back.className =
-    "px-3 py-1.5 rounded-lg border border-ink-700 text-sm text-ink-200 hover:bg-ink-800 transition-colors";
-  back.textContent = T("collection.back");
-  back.addEventListener("click", () => {
-    collectionState.playlistUrl = null;
-    collectionState.query = "";
+    const r = await api.request.getDownloadedIds({});
+    state.downloadedIds = new Set(r.ids);
     renderCollection();
-  });
-  const count = document.createElement("p");
-  count.className = "text-sm text-ink-300";
-  count.textContent = collectionState.query
-    ? T("collection.countOf", { filtered: filtered.length, total: tracks.length })
-    : T("collection.count", { total: tracks.length });
-  left.appendChild(back);
-  left.appendChild(count);
-
-  const dl = document.createElement("button");
-  dl.className =
-    "px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-sm font-semibold text-white active:scale-[0.98] transition-all";
-  dl.textContent = T("collection.downloadAll");
-  dl.disabled = tracks.length === 0;
-  if (tracks.length === 0) dl.classList.add("opacity-50", "pointer-events-none");
-  dl.addEventListener("click", () =>
-    withBusy("", async () => {
-      if (!guard()) return;
-      startDownloadView(T("collection.fullPlaylist"));
-      await api.request.downloadUrls({ urls: tracks.map((t) => t.url) });
-    await refreshDownloadedIds();
-      await renderSyncStats();
-      await renderHistory();
-    }),
-  );
-  top.appendChild(left);
-  top.appendChild(dl);
-
-  content.appendChild(top);
-
-  if (!filtered.length) {
-    content.appendChild(
-      emptyState(
-        T("collection.noResults"),
-        collectionState.query
-          ? T("collection.noTrackMatch", { query: collectionState.query })
-          : T("collection.playlistEmpty"),
-      ),
-    );
-    return;
+    renderQueue();
+  } catch {
+    state.downloadedIds = new Set();
   }
-  const list = document.createElement("div");
-  list.className = "space-y-1.5 max-h-[60vh] overflow-y-auto pr-1";
-  for (const t of filtered) list.appendChild(collectionTrackRow(t));
-  content.appendChild(list);
 }
 
-function emptyState(title: string, detail: string): HTMLElement {
-  const box = document.createElement("div");
-  box.className =
-    "flex flex-col items-center justify-center rounded-2xl border border-dashed border-ink-700 py-14 px-6 text-center";
-  const t = document.createElement("p");
-  t.className = "text-sm font-medium text-ink-200";
-  t.textContent = title;
-  box.appendChild(t);
-  if (detail) {
-    const d = document.createElement("p");
-    d.className = "text-xs text-ink-500 mt-1 max-w-xs";
-    d.textContent = detail;
-    box.appendChild(d);
+async function loadPlaylists(): Promise<void> {
+  if (!isApp || !state.loggedIn) return;
+  try {
+    const r = await api.request.getPlaylists({});
+    state.playlists = r.playlists;
+  } catch {
+    state.playlists = [];
   }
-  return box;
+  renderCollection();
 }
 
-function loadingState(text: string): HTMLElement {
-  const box = document.createElement("div");
-  box.className = "flex items-center gap-2 text-sm text-ink-400 py-6";
-  box.innerHTML = `<span class="spinner spinner-accent"></span> ${text}`;
-  return box;
-}
-
-$<HTMLButtonElement>("src-favorites").addEventListener("click", () => {
-  collectionState.source = "favorites";
-  collectionState.playlistUrl = null;
-  collectionState.query = "";
-  renderCollection();
-});
-$<HTMLButtonElement>("src-playlists").addEventListener("click", () => {
-  collectionState.source = "playlists";
-  collectionState.playlistUrl = null;
-  collectionState.query = "";
-  renderCollection();
-});
-
-// ---- Acerca de ----
-
-// Abre enlaces externos (repo, licencia) en el navegador del sistema.
-document.addEventListener("click", (e) => {
-  const el = (e.target as HTMLElement | null)?.closest?.("[data-open-url]");
-  if (!el || !isApp) return;
-  e.preventDefault();
-  const url = (el as HTMLElement).dataset.openUrl;
-  if (url) api.request.openExternal({ url }).catch(() => {});
-});
-
-async function initAbout(): Promise<void> {
+async function loadHistory(): Promise<void> {
   if (!isApp) return;
   try {
-    const info = await api.request.getAppInfo({});
-    $<HTMLElement>("about-version").textContent = `v${info.version}`;
-    $<HTMLElement>("about-repo").dataset.openUrl = info.repo;
-    $<HTMLElement>("about-license").dataset.openUrl = info.licenseUrl;
+    const r = await api.request.getHistory({});
+    state.history = r.items.map((it: { ts: number; target: string; format: string; ok: boolean }) => ({
+      ts: it.ts,
+      target: it.target,
+      format: it.format,
+      ok: it.ok,
+    }));
+    renderHistory();
   } catch {
-    // Sin puente (dev) o fallo: se dejan los valores por defecto del HTML.
+    state.history = [];
   }
 }
 
-// ---- Arranque ----
-applyStaticTranslations();
-resetDownloadUI();
-showView("status");
-refreshDownloadedIds();
-initAbout();
-(async () => {
-  let s = await loadStatus();
-  if (s && !s.deps.ready) {
-    await runDepsInstall();
-    s = await loadStatus();
+// ================= descarga real =================
+async function startBatch(kind: "all" | "missing"): Promise<void> {
+  if (!isApp) return;
+  if (!canDownload()) return;
+  if (state.downloading) {
+    toast("Ya hay una descarga en curso", "warn");
+    return;
   }
-  if (s?.deps.ready) {
-    // Comprobación de versiones de dependencias en segundo plano (sin modal).
-    checkForUpdatesBackground();
+  try {
+    state.downloading = true;
+    state.paused = false;
+    $("#dl-active").classList.remove("hidden");
+    renderSidebarState();
+    const r = kind === "all" ? await api.request.downloadAll({}) : await api.request.downloadMissing({});
+    if (!r.ok && r.code !== 0) {
+      toast("La descarga terminó con código " + r.code, "warn");
+    }
+  } catch (err) {
+    toast((err as Error).message, "error");
+  } finally {
+    endDownload();
+    await refreshDownloaded();
+    await refreshSync();
+    await loadHistory();
   }
-  // Comprobación de actualización de la propia app (solo en builds estables).
-  checkAppUpdateBackground();
-})();
+}
+
+async function queueTrack(item: CollectionItem): Promise<void> {
+  if (!isApp) return;
+  if (state.queue.some((q) => q.id === item.id && q.state !== "done" && q.state !== "error")) {
+    toast(T("toast.queued"), "info");
+    return;
+  }
+  state.queue.push({ id: item.id, title: item.title, uploader: item.uploader, url: item.url, state: "queued", pct: 0 });
+  toast(T("toast.queued"), "info");
+  renderQueue();
+  processQueue();
+}
+
+async function processQueue(): Promise<void> {
+  if (!isApp) return;
+  if (state.downloading) return; // una a la vez (batch o cola)
+  let next = state.queue.find((q) => q.state === "queued") || null;
+  if (!next) return;
+  state.downloading = true;
+  state.paused = false;
+  $("#dl-active").classList.remove("hidden");
+  renderSidebarState();
+  while (next) {
+    if (isDownloaded(next.id)) {
+      next.state = "done";
+      next.pct = 100;
+      renderQueue();
+      renderCollection();
+      next = state.queue.find((q) => q.state === "queued") || null;
+      continue;
+    }
+    next.state = "active";
+    next.pct = 0;
+    currentDownloadUrl = next.url;
+    renderQueue();
+    renderCollection();
+    $("#cur-title").textContent = next.title;
+    $("#cur-eta").textContent = "ETA --:--";
+    $("#cur-fill").style.width = "0%";
+    setAnimatedText($("#cur-pct"), "0%");
+    setAnimatedText($("#cur-idx"), String(state.queue.filter((q) => q.state === "active" || q.state === "queued").length ? state.queue.indexOf(next) + 1 : 1));
+    setAnimatedText($("#cur-total"), String(state.queue.length));
+    try {
+      const r = await api.request.downloadTrack({ url: next.url });
+      next.state = r.ok ? "done" : "error";
+      if (r.ok) next.pct = 100;
+    } catch (err) {
+      next.state = "error";
+      toast((err as Error).message, "error");
+    }
+    currentDownloadUrl = null;
+    renderQueue();
+    renderCollection();
+    await refreshDownloaded();
+    await refreshSync();
+    await loadHistory();
+    next = state.queue.find((q) => q.state === "queued") || null;
+  }
+  endDownload();
+  await refreshDownloaded();
+  await refreshSync();
+  await loadHistory();
+}
+
+function endDownload(): void {
+  state.downloading = false;
+  state.paused = false;
+  currentDownloadUrl = null;
+  $("#sb-dl-fill").style.width = "0%";
+  $("#dl-active").classList.add("hidden");
+  renderSidebarState();
+}
+
+// ================= mensajes del main =================
+let syncStatsTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSyncRefresh(): void {
+  if (syncStatsTimer) clearTimeout(syncStatsTimer);
+  syncStatsTimer = setTimeout(() => {
+    syncStatsTimer = null;
+    refreshDownloaded();
+    refreshSync();
+  }, 700);
+}
+
+function onStatus(stage: string, message: string): void {
+  if (stage === "download") {
+    const done = /completada|finaliz|código|erro/i.test(message);
+    if (!done) {
+      $("#dl-active").classList.remove("hidden");
+    }
+  } else if (stage === "song") {
+    scheduleSyncRefresh();
+  } else if (stage === "likes") {
+    // silencioso
+  } else if (stage === "login") {
+    // silencioso
+  } else if (stage === "update") {
+    toast(message, "info", false);
+  } else if (stage === "deps") {
+    const pre = $("#deps-log");
+    if (pre && $("#modal-deps")) pre.textContent += message + "\n";
+  }
+}
+
+function onProgress(p: DownloadProgressPayload): void {
+  const dlActive = $("#dl-active");
+  if (dlActive) dlActive.classList.remove("hidden");
+  $("#cur-title").textContent = p.title || $("#cur-title").textContent;
+  $("#cur-eta").textContent = p.eta ? "ETA " + p.eta : "ETA --:--";
+  $("#cur-fill").style.width = Math.min(100, p.percent) + "%";
+  setAnimatedText($("#cur-pct"), Math.round(p.percent) + "%");
+  const idx = p.current || state.queue.filter((q) => q.state === "active").length;
+  const total = p.total || state.queue.length || state.syncTotal;
+  if (idx) setAnimatedText($("#cur-idx"), String(idx));
+  if (total) setAnimatedText($("#cur-total"), String(total));
+  // sidebar
+  $("#sb-dl-fill").style.width = Math.min(100, p.percent) + "%";
+  $("#sb-dl-pct").textContent = Math.round(p.percent) + "%";
+  if (p.title) $("#sb-dl-title").textContent = p.title;
+  // item activo de la cola
+  const active = state.queue.find((q) => q.state === "active");
+  if (active) {
+    active.pct = p.percent;
+    renderQueue();
+  }
+}
+
+// ================= acciones =================
+function debounce(fn: () => void, ms: number): () => void {
+  let id: ReturnType<typeof setTimeout>;
+  return () => {
+    clearTimeout(id);
+    id = setTimeout(fn, ms);
+  };
+}
+
+document.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+
+  const openBtn = target.closest("[data-modal-open]") as HTMLElement | null;
+  if (openBtn) {
+    const [id, arg] = (openBtn.dataset.modalOpen || "").split(":");
+    if (id === "json") openJson(arg as "export" | "import");
+    else if (id === "purge") openPurge();
+    else if (id === "deps") runDeps();
+    else openModal(id);
+    return;
+  }
+
+  const pg = target.closest("[data-page]") as HTMLElement | null;
+  if (pg) {
+    const delta = Number((pg.dataset.page || "").split(":")[1]);
+    const pages = Math.max(1, Math.ceil(state.queue.length / state.qPer));
+    state.qPage = Math.min(pages, Math.max(1, state.qPage + delta));
+    renderQueue();
+    return;
+  }
+
+  const tab = target.closest("[data-tab]") as HTMLElement | null;
+  if (tab) {
+    state.tab = tab.dataset.tab as "likes" | "playlists";
+    state.openPlaylist = null;
+    $$("[data-tab]").forEach((p) => p.classList.toggle("is-active", p === tab));
+    renderCollection();
+    return;
+  }
+
+  const op = target.closest("[data-open-playlist]") as HTMLElement | null;
+  if (op) {
+    const p = state.playlists[Number(op.dataset.openPlaylist)];
+    if (p) {
+      state.openPlaylist = p;
+      state.playlistTracks = [];
+      renderCollection();
+      if (isApp) {
+        api.request
+          .getPlaylistTracks({ url: p.url })
+          .then((r: { tracks: LikedTrackPayload[]; tokenInvalid: boolean }) => {
+            state.playlistTracks = r.tracks as unknown as CollectionItem[];
+            renderCollection();
+          })
+          .catch(() => {
+            state.playlistTracks = [];
+            renderCollection();
+          });
+      }
+    }
+    return;
+  }
+
+  const tpl = target.closest("[data-tpl]") as HTMLElement | null;
+  if (tpl) {
+    $("#tpl-editor").textContent += "%(" + tpl.dataset.tpl + ")s";
+    renderTplPreview();
+    refreshDirty();
+    return;
+  }
+
+  const dl = target.closest("[data-dl-track]") as HTMLElement | null;
+  if (dl) {
+    const item = state.likes.find((l) => l.id === dl.dataset.dlTrack);
+    if (item) queueTrack(item);
+    return;
+  }
+
+  if (target.closest("[data-open-folder]")) {
+    const id = (target.closest("[data-open-folder]") as HTMLElement).dataset.openFolder;
+    const item = state.queue.find((q) => q.id === id);
+    if (item && isApp) {
+      api.request.showDownloadedItem({ id: item.id, title: item.title }).then((r: { ok: boolean }) => {
+        if (!r.ok) toast(T("toast.opened"), "info");
+      });
+    }
+    return;
+  }
+
+  const md = target.closest("[data-mode]") as HTMLElement | null;
+  if (md) {
+    const [scope, mode] = (md.dataset.mode || "").split(":");
+    if (scope === "col") {
+      state.colMode = mode;
+      renderCollection();
+    } else {
+      state.searchMode = mode;
+      renderSearch(($("#search-input") as HTMLInputElement).value);
+    }
+    return;
+  }
+
+  const actEl = target.closest("[data-action]") as HTMLElement | null;
+  if (!actEl) return;
+  const action = actEl.dataset.action;
+  handleAction(action, actEl);
+});
+
+async function handleAction(action: string | undefined, el: HTMLElement): Promise<void> {
+  if (!action) return;
+  if (action === "login") {
+    if (!isApp) return;
+    try {
+      const r = await api.request.login({});
+      state.loggedIn = true;
+      state.username = r.username || state.username;
+      await loadStatus();
+      toast(T("toast.login").replace("nova.rincon", state.username), "success");
+      await loadLikes();
+      await refreshDownloaded();
+      await refreshSync();
+      loadPlaylists();
+    } catch (err) {
+      toast((err as Error).message, "error", false, { label: T("account.pasteToken"), run: () => openModal("token") });
+    }
+  } else if (action === "logout") {
+    if (!isApp) return;
+    await api.request.logout({});
+    state.loggedIn = false;
+    state.username = "";
+    await loadStatus();
+    toast(T("toast.logout"), "warn");
+  } else if (action === "save-token") {
+    const v = ($("#token-input") as HTMLInputElement).value.trim();
+    if (!v) return toast(T("toast.tokenEmpty"), "error");
+    if (!isApp) return;
+    await api.request.loginWithToken({ token: v });
+    closeModal($("#modal-token"));
+    state.loggedIn = true;
+    await loadStatus();
+    await loadLikes();
+    await refreshDownloaded();
+    await refreshSync();
+    loadPlaylists();
+    toast(T("toast.tokenSaved"), "success");
+  } else if (action === "refresh-likes") {
+    if (!isApp) return;
+    try {
+      await api.request.refreshLikes({});
+      await loadLikes();
+      await refreshDownloaded();
+      await refreshSync();
+      toast(T("toast.refreshed"), "success");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+  } else if (action === "download-all" || action === "download-missing") {
+    await startBatch(action === "download-all" ? "all" : "missing");
+  } else if (action === "download-missing-col") {
+    await startBatch("missing");
+  } else if (action === "retry-failed") {
+    const failed = state.history.filter((h) => !h.ok);
+    if (!failed.length) return toast(T("toast.noFailed"), "info");
+    toast(T("toast.retrying", { n: failed.length }), "info", false, {
+      label: T("toast.viewDownloads"),
+      run: () => setView("download"),
+    });
+    // re-descargar: se usa downloadMissing para los que falten
+    await startBatch("missing");
+  } else if (action === "copy-log") {
+    navigator.clipboard && navigator.clipboard.writeText(state.log.join("\n"));
+    toast(T("toast.logCopied"), "success");
+  } else if (action === "clear-search") {
+    ($("#search-input") as HTMLInputElement).value = "";
+    state.searchResults = null;
+    renderSearch("");
+    $("#search-input").focus();
+  } else if (action === "clear-filter") {
+    ($("#col-filter") as HTMLInputElement).value = "";
+    renderCollection();
+    $("#col-filter").focus();
+  } else if (action === "pause") {
+    if (!isApp) return;
+    if (state.paused) {
+      await api.request.resumeDownload({});
+      state.paused = false;
+    } else {
+      await api.request.pauseDownload({});
+      state.paused = true;
+    }
+    el.textContent = T(state.paused ? "dl.resume" : "dl.pause");
+    toast(T(state.paused ? "toast.paused" : "toast.resumed"), "warn");
+  } else if (action === "stop") {
+    $("#btn-pause").textContent = T("dl.pause");
+    state.paused = false;
+    state.queue = [];
+    renderQueue();
+    if (isApp) await api.request.cancelDownload({});
+    endDownload();
+    toast(T("toast.stopped"), "warn");
+  } else if (action === "search") {
+    const q = ($("#search-input") as HTMLInputElement).value.trim();
+    if (!q) {
+      state.searchResults = null;
+      renderSearch("");
+      return;
+    }
+    if (!isApp) return;
+    toast(T("search.searching"), "info", false);
+    try {
+      const r = await api.request.searchSoundcloud({ query: q });
+      state.searchResults = r.tracks as unknown as CollectionItem[];
+      renderSearch(q);
+    } catch (err) {
+      state.searchResults = [];
+      renderSearch(q);
+      toast((err as Error).message, "error");
+    }
+  } else if (action === "download-link") {
+    const v = ($("#link-input") as HTMLInputElement).value.trim();
+    const bad = !/^https?:\/\/(www\.)?soundcloud\.com\//.test(v);
+    $("#link-error").classList.toggle("hidden", !bad);
+    if (bad) {
+      $("#link-input").focus();
+      return toast(T("toast.noLink"), "error");
+    }
+    if (!isApp) return;
+    if (!canDownload()) return;
+    try {
+      const r = await api.request.downloadUrl({ url: v });
+      if (!r.ok) toast("Código " + r.code, "warn");
+    } catch (err) {
+      toast((err as Error).message, "error");
+    }
+    setView("download");
+  } else if (action === "back-playlists") {
+    state.openPlaylist = null;
+    state.playlistTracks = [];
+    renderCollection();
+  } else if (action === "pick-folder") {
+    if (!isApp) return;
+    const r = await api.request.selectFolder({});
+    if (r.path) {
+      ($("#set-folder") as HTMLInputElement).value = r.path;
+      $("#folder-error").classList.add("hidden");
+      refreshDirty();
+      toast(T("toast.folder"), "info");
+    }
+  } else if (action === "save-settings") {
+    if (!($("#set-folder") as HTMLInputElement).value.trim()) {
+      $("#folder-error").classList.remove("hidden");
+      return toast(T("set.folderError"), "error");
+    }
+    $("#folder-error").classList.add("hidden");
+    if (!isApp) return;
+    await api.request.saveConfig({
+      outdir: ($("#set-folder") as HTMLInputElement).value.trim(),
+      format: ($("#set-format") as HTMLSelectElement).value,
+      bitrate: ($("#set-bitrate") as HTMLSelectElement).value,
+      filenameTemplate: $("#tpl-editor").textContent || "",
+      theme: ($("#set-theme") as HTMLSelectElement).value,
+      lang: currentLang,
+      skipExisting: ($("#set-skip") as HTMLInputElement).checked,
+    });
+    markClean();
+    toast(T("set.saved"), "success");
+    loadStatus();
+  } else if (action === "clear-log") {
+    state.log = [];
+    $("#dev-log").textContent = "";
+  } else if (action === "retry-deps") {
+    runDeps();
+  } else if (action === "do-update") {
+    $("#update-icon").classList.add("hidden");
+    $("#update-spinner").classList.remove("hidden");
+    $("#update-status").textContent = T("modal.update.downloading");
+    if (isApp) {
+      const r = await api.request.applyAppUpdate({});
+      if (!r.ok) {
+        $("#update-icon").classList.remove("hidden");
+        $("#update-spinner").classList.add("hidden");
+        $("#update-status").textContent = T("update.applyFailed");
+      }
+    }
+  }
+}
+
+// ================= modales: cierre =================
+$$("[data-modal-close]").forEach((b) =>
+  b.addEventListener("click", () => closeModal(b.closest(".modal") as HTMLElement)),
+);
+$$(".modal").forEach((m) =>
+  m.addEventListener("click", (e) => {
+    if (e.target === m) closeModal(m as HTMLElement);
+  }),
+);
+$("#purge-confirm").addEventListener("click", async () => {
+  if (!isApp) return;
+  closeModal($("#modal-purge"));
+  try {
+    const r = await api.request.cleanupNonFavorites({});
+    toast(T("toast.purged") + (r.removed.length ? " (" + r.removed.length + ")" : ""), "success");
+    await refreshDownloaded();
+    await refreshSync();
+  } catch (err) {
+    toast((err as Error).message, "error");
+  }
+});
+
+// ================= navegación / sidebar =================
+$$("[data-nav]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.nav!)));
+$("#sb-status").addEventListener("click", () => {
+  const a = $("#sb-status").dataset.sbAction;
+  if (a === "deps") runDeps();
+  else if (a === "login") setView("status");
+});
+$("#sb-downloading").addEventListener("click", () => setView("download"));
+
+// ================= ajustes listeners =================
+($("#set-theme") as HTMLSelectElement).addEventListener("change", (e) => {
+  applyTheme((e.target as HTMLSelectElement).value);
+  refreshDirty();
+});
+($("#set-lang") as HTMLSelectElement).addEventListener("change", (e) => {
+  applyLang(normalizeLang((e.target as HTMLSelectElement).value));
+  if (isApp) api.request.saveConfig({ lang: currentLang }).catch(() => {});
+});
+($("#set-format") as HTMLSelectElement).addEventListener("change", () => {
+  renderBitrates();
+  refreshDirty();
+});
+$("#tpl-editor").addEventListener("input", () => {
+  renderTplPreview();
+  refreshDirty();
+});
+["#set-folder", "#set-bitrate", "#set-skip"].forEach((sel) => {
+  const el = $(sel) as HTMLElement;
+  el.addEventListener("input", refreshDirty);
+  el.addEventListener("change", refreshDirty);
+});
+$("#col-filter").addEventListener("input", debounce(renderCollection, 140));
+const liveSearch = debounce(() => renderSearch(($("#search-input") as HTMLInputElement).value), 220);
+$("#search-input").addEventListener("input", (e) => {
+  $("#search-clear").classList.toggle("hidden", !(e.target as HTMLInputElement).value);
+  liveSearch();
+});
+$("#search-input").addEventListener("keydown", (e) => {
+  const input = e.target as HTMLInputElement;
+  if (e.key === "Enter") renderSearch(input.value);
+  if (e.key === "Escape" && input.value) {
+    input.value = "";
+    $("#search-clear").classList.add("hidden");
+    renderSearch("");
+  }
+});
+
+// ================= shortcuts =================
+document.addEventListener("keydown", (e) => {
+  const mod = e.metaKey || e.ctrlKey;
+  const typing =
+    /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || "") ||
+    (document.activeElement as HTMLElement)?.isContentEditable === true;
+  if (mod && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    setView("search");
+    setTimeout(() => $("#search-input").focus(), 30);
+  } else if (mod && e.key === ",") {
+    e.preventDefault();
+    setView("settings");
+  } else if (mod && e.key.toLowerCase() === "s" && state.view === "settings") {
+    e.preventDefault();
+    const btn = $("#btn-save-settings") as HTMLButtonElement;
+    if (!btn.disabled) btn.click();
+  } else if (!mod && !typing && e.key === "/") {
+    e.preventDefault();
+    setView("search");
+    setTimeout(() => $("#search-input").focus(), 30);
+  } else if (!mod && !typing && /^[1-7]$/.test(e.key)) {
+    const order = ["status", "download", "search", "collection", "settings", "developer", "about"];
+    setView(order[Number(e.key) - 1]);
+  } else if (e.key === "Escape") {
+    $$(".modal").forEach((m) => m.classList.add("hidden"));
+  }
+});
+
+// ================= boot =================
+function renderAll(): void {
+  renderSidebarState();
+  renderAccount();
+  renderTools();
+  renderSync();
+  renderQueue();
+  renderHistory();
+  renderCollection();
+  renderTplChips();
+  renderTplPreview();
+  renderDev();
+  renderSearch(($("#search-input") as HTMLInputElement).value);
+  refreshDirty();
+}
 
 async function checkAppUpdateBackground(): Promise<void> {
   if (!isApp) return;
   try {
     const r = await api.request.checkAppUpdate({});
     if (r.updateAvailable) {
-      showUpdateModal(r.version);
+      $("#update-version").textContent = "v" + (r.version || "");
+      openModal("update");
     }
   } catch {
-    // Sin red: se ignora.
+    // sin red
   }
 }
 
-async function checkForUpdatesBackground(): Promise<void> {
-  if (!isApp) return;
-  try {
-    const r = await api.request.checkForUpdates({});
-    await loadStatus();
-    if (r.updated.length) {
-      toast(
-        T("toast.depsUpdated", { list: r.updated.join(", ") }),
-        "success",
-        false,
-        6000,
-      );
-    }
-  } catch {
-    // Sin red u otro fallo: se ignora, no es crítico.
-  }
+function seedSettings(c: ConfigPayload): void {
+  ($("#set-folder") as HTMLInputElement).value = c.outdir || "";
+  ($("#set-format") as HTMLSelectElement).value = c.format || "m4a";
+  renderBitrates();
+  const bitrate = c.bitrate || c.quality;
+  if (bitrate) ($("#set-bitrate") as HTMLSelectElement).value = bitrate;
+  ($("#set-theme") as HTMLSelectElement).value = c.theme || "light";
+  applyTheme(c.theme || "light");
+  const lang = resolveLang(c.lang);
+  ($("#set-lang") as HTMLSelectElement).value = lang;
+  currentLang = lang;
+  document.documentElement.lang = lang;
+  $("#tpl-editor").textContent = c.filenameTemplate || "%(title)s - %(artist)s";
+  ($("#set-skip") as HTMLInputElement).checked = c.skipExisting ?? true;
+  renderTplPreview();
+  renderTplChips();
+  markClean();
 }
+
+async function boot(): Promise<void> {
+  applyStaticTranslations();
+  renderTplChips();
+  const s = await loadStatus();
+  if (s) {
+    seedSettings(s.config);
+    if (!s.deps.ready) {
+      // se abre el modal de deps automáticamente
+      setTimeout(() => {
+        if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) openModal("deps");
+      }, 600);
+    }
+    await loadLikes();
+    await refreshSync();
+    await refreshDownloaded();
+    await loadHistory();
+    if (state.loggedIn) loadPlaylists();
+  }
+  renderAll();
+  checkAppUpdateBackground();
+}
+
+boot();
