@@ -153,6 +153,17 @@ export async function fetchSoundCloudClientId(): Promise<string> {
 }
 
 /** Obtiene los favoritos con portada real (artwork_url) vía la API v2. */
+/** La pista solo se sirve cifrada (FairPlay/Widevine) sin descarga original. */
+export function isDrmTrack(t: any): boolean {
+  if (!t || t.downloadable) return false;
+  const trans = t?.media?.transcodings;
+  if (!Array.isArray(trans)) return false;
+  return trans.some((x: any) => {
+    const p = x?.format?.protocol ?? '';
+    return p.startsWith('cbc-') || p.startsWith('ctr-');
+  });
+}
+
 /** Resuelve el id de un usuario de SoundCloud desde su permalink. */
 export async function resolveUserId(
   username: string,
@@ -197,6 +208,7 @@ export async function fetchLikesViaApi(opts: {
         uploader: t.user?.username,
         artist: t.user?.username,
         thumbnail: t.artwork_url,
+        drm: isDrmTrack(t),
         index: tracks.length,
       });
     }
@@ -231,6 +243,7 @@ export async function searchTracksViaApi(
       uploader: t.user?.username,
       artist: t.user?.username,
       thumbnail: t.artwork_url,
+      drm: isDrmTrack(t),
       index: i,
     }));
 }

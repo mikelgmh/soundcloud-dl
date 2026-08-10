@@ -90,6 +90,8 @@ export interface LikedTrack {
   artist?: string;
   /** URL de la portada de la canción. */
   thumbnail?: string;
+  /** La pista solo se sirve con DRM (FairPlay/Widevine) y puede fallar. */
+  drm?: boolean;
   index: number;
 }
 

@@ -150,6 +150,7 @@ interface CollectionItem {
   uploader?: string;
   url: string;
   thumbnail?: string;
+  drm?: boolean;
 }
 
 const state = {
@@ -235,6 +236,15 @@ function artFor(item: { title: string; uploader?: string; thumbnail?: string }):
   artCache[key] = url;
   return url;
 }
+/** Badge de pista protegida por DRM (solo cifrada, puede fallar). */
+function drmBadge(): string {
+  return (
+    '<span class="drm-badge" title="' +
+    T("badge.drm") +
+    '"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3"/><rect x="4.5" y="11" width="15" height="9.5" rx="1.5"/><path d="M12 14.5v2.5"/></svg></span>'
+  );
+}
+
 function artImg(item: { title: string; uploader?: string; thumbnail?: string }, cls: string): string {
   const fallback = artFor({ title: item.title, uploader: item.uploader });
   return (
@@ -488,7 +498,10 @@ function rowHtml(item: CollectionItem, n: number): string {
     '<div class="row"><span class="row-num">' +
     n +
     "</span>" +
+    '<span class="row-art-wrap">' +
     artImg(item, "row-art") +
+    (item.drm ? drmBadge() : "") +
+    "</span>" +
     '<div class="row-main"><p class="row-title">' +
     item.title +
     '</p><p class="row-sub">' +
@@ -506,6 +519,7 @@ function cardHtml(item: CollectionItem): string {
     '<div class="tile' + (done ? " is-done" : "") + '">' +
     '<div class="tile-art">' +
     artImg(item, "tile-img") +
+    (item.drm ? drmBadge() : "") +
     (done ? '<span class="tile-flag">✓</span>' : "") +
     (q?.state === "active" ? '<span class="tile-flag is-live">' + q.pct + "%</span>" : "") +
     '<div class="tile-hover">' + trackButtonHtml(item) + "</div>" +

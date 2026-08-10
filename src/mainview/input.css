@@ -600,6 +600,46 @@ kbd {
   border: 1px solid var(--line);
   margin-right: 0.25rem;
 }
+.row-art-wrap {
+  position: relative;
+  flex: none;
+  line-height: 0;
+}
+.row-art-wrap .row-art {
+  margin-right: 0;
+}
+
+.drm-badge {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: #ffb454;
+  background: rgb(0 0 0 / 0.62);
+  border: 1px solid rgb(255 180 84 / 0.55);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.drm-badge svg {
+  width: 9px;
+  height: 9px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: square;
+}
+.tile-art .drm-badge {
+  width: 18px;
+  height: 18px;
+}
+.tile-art .drm-badge svg {
+  width: 11px;
+  height: 11px;
+}
 
 .seg {
   display: inline-flex;
