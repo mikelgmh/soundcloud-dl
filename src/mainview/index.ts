@@ -174,6 +174,7 @@ const state = {
   openPlaylist: null as null | { id: string; title: string; url: string },
   playlistTracks: [] as CollectionItem[],
   searchResults: null as CollectionItem[] | null,
+  colLoading: false,
   log: [] as string[],
   syncTotal: 0,
   syncDone: 0,
@@ -532,6 +533,17 @@ function renderCollection(): void {
   $("#col-playlists").classList.toggle("hidden", isLikes || !!state.openPlaylist);
   $("#col-tracks").classList.toggle("hidden", isLikes || !state.openPlaylist);
 
+  if (state.colLoading) {
+    const host = isLikes
+      ? $("#col-likes")
+      : state.openPlaylist
+        ? $("#col-tracks-list")
+        : $("#col-playlists");
+    host.innerHTML = collectionLoaderHtml();
+    syncModeButtons("col", state.colMode);
+    return;
+  }
+
   const mode = state.colMode;
   if (isLikes) {
     const rows = state.likes.filter((l) => (l.title + (l.uploader || "")).toLowerCase().includes(q));
@@ -850,6 +862,8 @@ async function loadStatus(): Promise<StatusSnapshot | null> {
 
 async function loadLikes(): Promise<void> {
   if (!isApp) return;
+  state.colLoading = true;
+  renderCollection();
   try {
     const r = await api.request.getLikesCache({});
     if (r.tracks.length) {
@@ -861,6 +875,7 @@ async function loadLikes(): Promise<void> {
   } catch {
     state.likes = [];
   }
+  state.colLoading = false;
   renderSync();
   renderCollection();
 }
@@ -891,12 +906,15 @@ async function refreshDownloaded(): Promise<void> {
 
 async function loadPlaylists(): Promise<void> {
   if (!isApp || !state.loggedIn) return;
+  state.colLoading = true;
+  renderCollection();
   try {
     const r = await api.request.getPlaylists({});
     state.playlists = r.playlists;
   } catch {
     state.playlists = [];
   }
+  state.colLoading = false;
   renderCollection();
 }
 
@@ -1079,6 +1097,26 @@ function debounce(fn: () => void, ms: number): () => void {
   };
 }
 
+/** Deshabilita un botón y muestra un spinner mientras se ejecuta fn. */
+function withBusy(el: HTMLElement, fn: () => Promise<void>): Promise<void> {
+  const btn = el as HTMLButtonElement;
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner spinner-accent h-3.5 w-3.5"></span>';
+  return fn().finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  });
+}
+
+function collectionLoaderHtml(): string {
+  return (
+    '<div class="empty"><span class="spinner spinner-accent h-5 w-5"></span><p>' +
+    T("col.loading") +
+    "</p></div>"
+  );
+}
+
 document.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
 
@@ -1105,8 +1143,14 @@ document.addEventListener("click", (e) => {
   if (tab) {
     state.tab = tab.dataset.tab as "likes" | "playlists";
     state.openPlaylist = null;
+    state.playlistTracks = [];
     $$("[data-tab]").forEach((p) => p.classList.toggle("is-active", p === tab));
     renderCollection();
+    if (state.tab === "likes" && !state.likes.length && !state.colLoading) {
+      loadLikes();
+    } else if (state.tab === "playlists" && !state.playlists.length && !state.colLoading) {
+      loadPlaylists();
+    }
     return;
   }
 
@@ -1217,15 +1261,17 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     toast(T("toast.tokenSaved"), "success");
   } else if (action === "refresh-likes") {
     if (!isApp) return;
-    try {
-      await api.request.refreshLikes({});
-      await loadLikes();
-      await refreshDownloaded();
-      await refreshSync();
-      toast(T("toast.refreshed"), "success");
-    } catch (err) {
-      toast((err as Error).message, "error");
-    }
+    await withBusy(el, async () => {
+      try {
+        await api.request.refreshLikes({});
+        await loadLikes();
+        await refreshDownloaded();
+        await refreshSync();
+        toast(T("toast.refreshed"), "success");
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    });
   } else if (action === "download-all" || action === "download-missing") {
     await startBatch(action === "download-all" ? "all" : "missing");
   } else if (action === "download-missing-col") {
