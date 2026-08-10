@@ -367,6 +367,7 @@ select.input {
 
 .spinner {
   display: inline-block;
+  flex: none;
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, var(--text-dim) 30%, transparent);
   border-top-color: currentColor;

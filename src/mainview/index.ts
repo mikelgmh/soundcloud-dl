@@ -431,7 +431,9 @@ function renderQueue(): void {
     .slice(start, start + state.qPer)
     .map(
       (it, i) =>
-        '<div class="row"><span class="row-num">' +
+        '<div class="row" data-qid="' +
+        it.id +
+        '"><span class="row-num">' +
         (start + i + 1) +
         "</span>" +
         artImg(it, "row-art") +
@@ -440,8 +442,9 @@ function renderQueue(): void {
         '</p><p class="row-sub">' +
         (it.uploader || "") +
         "</p></div>" +
+        '<span class="q-status">' +
         queueStatusHtml(it) +
-        "</div>",
+        "</span></div>",
     )
     .join("");
 }
@@ -1010,7 +1013,7 @@ async function startBatch(kind: "all" | "missing"): Promise<void> {
   try {
     state.downloading = true;
     state.paused = false;
-    $("#dl-active").classList.remove("hidden");
+    showDownloadLive();
     renderSidebarState();
     const r = kind === "all" ? await api.request.downloadAll({}) : await api.request.downloadMissing({});
     if (r.code !== 0) state.batchFailed = true;
@@ -1052,7 +1055,7 @@ async function processQueue(): Promise<void> {
   if (!next) return;
   state.downloading = true;
   state.paused = false;
-  $("#dl-active").classList.remove("hidden");
+  showDownloadLive();
   renderSidebarState();
   while (next) {
     if (isDownloaded(next.id)) {
@@ -1101,9 +1104,21 @@ function endDownload(): void {
   state.paused = false;
   state.batchMode = false;
   currentDownloadUrl = null;
+  showDownloadIdle();
   $("#sb-dl-fill").style.width = "0%";
-  $("#dl-active").classList.add("hidden");
   renderSidebarState();
+}
+
+/** Muestra el bloque de descarga actual con el mensaje de inactividad. */
+function showDownloadIdle(): void {
+  $("#cur-idle")?.classList.remove("hidden");
+  $("#cur-live")?.classList.add("hidden");
+}
+
+/** Muestra el bloque de descarga actual con la pista y el progreso en vivo. */
+function showDownloadLive(): void {
+  $("#cur-idle")?.classList.add("hidden");
+  $("#cur-live")?.classList.remove("hidden");
 }
 
 // ================= mensajes del main =================
@@ -1121,10 +1136,10 @@ function onStatus(stage: string, message: string): void {
   if (stage === "download") {
     const done = /completada|finaliz|código|erro/i.test(message);
     if (done) {
-      $("#dl-active").classList.add("hidden");
+      showDownloadIdle();
       toast(message, /completad/i.test(message) ? "success" : "error");
     } else {
-      $("#dl-active").classList.remove("hidden");
+      showDownloadLive();
     }
   } else if (stage === "song") {
     scheduleSyncRefresh();
@@ -1141,8 +1156,7 @@ function onStatus(stage: string, message: string): void {
 }
 
 function onProgress(p: DownloadProgressPayload): void {
-  const dlActive = $("#dl-active");
-  if (dlActive) dlActive.classList.remove("hidden");
+  showDownloadLive();
   $("#cur-title").textContent = p.title || $("#cur-title").textContent;
   $("#cur-eta").textContent = p.eta ? "ETA " + p.eta : "ETA --:--";
   $("#cur-fill").style.width = Math.min(100, p.percent) + "%";
@@ -1172,11 +1186,13 @@ function onProgress(p: DownloadProgressPayload): void {
   $("#sb-dl-fill").style.width = Math.min(100, p.percent) + "%";
   $("#sb-dl-pct").textContent = Math.round(p.percent) + "%";
   if (p.title) $("#sb-dl-title").textContent = p.title;
-  // item activo de la cola
+  // item activo de la cola: actualiza solo su celda de estado (sin re-render
+  // de toda la lista, que provocaba parpadeo en cada tick de progreso).
   const active = state.queue.find((q) => q.state === "active");
   if (active) {
     active.pct = p.percent;
-    renderQueue();
+    const cell = $("#queue-list")?.querySelector(`[data-qid="${active.id}"] .q-status`);
+    if (cell) cell.innerHTML = queueStatusHtml(active);
   }
 }
 
