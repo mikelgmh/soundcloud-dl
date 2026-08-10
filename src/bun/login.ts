@@ -16,14 +16,20 @@ const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_MS = 800;
 const CHECK_TIMEOUT_MS = 15 * 1000;
 
+const OAUTH_TOKEN_RE = /^2-\d+-\d+-[0-9a-fA-F]{8,}$/;
+
 function readOAuthToken(): string | null {
   try {
     const cookies = Session.defaultSession.cookies.get({
       name: "oauth_token",
     });
-    const found = cookies.find((c) =>
+    const sc = cookies.filter((c) =>
       (c.domain ?? "").includes("soundcloud.com"),
     );
+    // Preferir el token con formato OAuth real (2-<n>-<n>-<hex>): la sesión
+    // puede contener cookies obsoletas cuyo valor es un número (user id) que
+    // la API rechaza con 401.
+    const found = sc.find((c) => OAUTH_TOKEN_RE.test(c.value ?? "")) ?? sc[0];
     return found?.value ? decodeURIComponent(found.value) : null;
   } catch {
     return null;

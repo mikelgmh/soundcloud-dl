@@ -393,7 +393,7 @@ export class Service {
     let tracks: LikedTrack[] | null = null;
     // La API v2 trae las portadas reales; si falla (anti-bot) se usa yt-dlp.
     try {
-      tracks = await fetchLikesViaApi({ oauthToken: token });
+      tracks = await fetchLikesViaApi({ username });
       if (!tracks.length) tracks = null;
     } catch (err) {
       this.emitter.log(

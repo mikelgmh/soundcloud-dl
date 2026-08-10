@@ -153,21 +153,32 @@ async function fetchSoundCloudClientId(): Promise<string> {
 }
 
 /** Obtiene los favoritos con portada real (artwork_url) vía la API v2. */
+/** Resuelve el id de un usuario de SoundCloud desde su permalink. */
+export async function resolveUserId(
+  username: string,
+  cid: string,
+  headers: Record<string, string>,
+): Promise<string | null> {
+  const url = `https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(
+    `https://soundcloud.com/${username}`,
+  )}&client_id=${cid}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) return null;
+  const j = await res.json();
+  return j?.id ? String(j.id) : null;
+}
+
 export async function fetchLikesViaApi(opts: {
-  oauthToken: string;
+  username: string;
 }): Promise<LikedTrack[]> {
   const cid = await fetchSoundCloudClientId();
-  const headers = {
+  // No se envía el token de OAuth: el capturado en el login puede no ser
+  // válido para la API v2 (401) e invalidaría la petición entera. Los
+  // favoritos de un usuario son públicos: basta con el id + client_id.
+  const headers: Record<string, string> = {
     'User-Agent': API_UA,
-    Authorization: `OAuth ${opts.oauthToken}`,
   };
-  const meRes = await fetch(
-    `https://api-v2.soundcloud.com/me?client_id=${cid}`,
-    { headers },
-  );
-  if (!meRes.ok) throw new Error(`SoundCloud API ${meRes.status}`);
-  const me = await meRes.json();
-  const uid = me?.id;
+  const uid = await resolveUserId(opts.username, cid, headers);
   if (!uid) throw new Error('SoundCloud API sin usuario');
 
   const tracks: LikedTrack[] = [];
