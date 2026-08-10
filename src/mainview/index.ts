@@ -315,6 +315,8 @@ function renderAccount(): void {
   chip.textContent = state.loggedIn ? T("account.loggedIn") : T("account.loggedOut");
   chip.className = "chip " + (state.loggedIn ? "chip-on" : "chip-muted");
   $("#acct-msg").textContent = state.loggedIn ? T("account.msgIn") : T("account.msgOut");
+  $$('[data-action="login"]').forEach((b) => b.classList.toggle("hidden", state.loggedIn));
+  $$('[data-modal-open="token"]').forEach((b) => b.classList.toggle("hidden", state.loggedIn));
   $("#btn-logout").classList.toggle("hidden", !state.loggedIn);
 }
 
@@ -1226,19 +1228,21 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
   if (!action) return;
   if (action === "login") {
     if (!isApp) return;
-    try {
-      const r = await api.request.login({});
-      state.loggedIn = true;
-      state.username = r.username || state.username;
-      await loadStatus();
-      toast(T("toast.login").replace("nova.rincon", state.username), "success");
-      await loadLikes();
-      await refreshDownloaded();
-      await refreshSync();
-      loadPlaylists();
-    } catch (err) {
-      toast((err as Error).message, "error", false, { label: T("account.pasteToken"), run: () => openModal("token") });
-    }
+    await withBusy(el, async () => {
+      try {
+        const r = await api.request.login({});
+        state.loggedIn = true;
+        state.username = r.username || state.username;
+        await loadStatus();
+        toast(T("toast.login").replace("nova.rincon", state.username), "success");
+        await loadLikes();
+        await refreshDownloaded();
+        await refreshSync();
+        loadPlaylists();
+      } catch (err) {
+        toast((err as Error).message, "error", false, { label: T("account.pasteToken"), run: () => openModal("token") });
+      }
+    });
   } else if (action === "logout") {
     if (!isApp) return;
     await api.request.logout({});
@@ -1250,15 +1254,17 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     const v = ($("#token-input") as HTMLInputElement).value.trim();
     if (!v) return toast(T("toast.tokenEmpty"), "error");
     if (!isApp) return;
-    await api.request.loginWithToken({ token: v });
-    closeModal($("#modal-token"));
-    state.loggedIn = true;
-    await loadStatus();
-    await loadLikes();
-    await refreshDownloaded();
-    await refreshSync();
-    loadPlaylists();
-    toast(T("toast.tokenSaved"), "success");
+    await withBusy(el, async () => {
+      await api.request.loginWithToken({ token: v });
+      closeModal($("#modal-token"));
+      state.loggedIn = true;
+      await loadStatus();
+      await loadLikes();
+      await refreshDownloaded();
+      await refreshSync();
+      loadPlaylists();
+      toast(T("toast.tokenSaved"), "success");
+    });
   } else if (action === "refresh-likes") {
     if (!isApp) return;
     await withBusy(el, async () => {
@@ -1273,9 +1279,9 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
       }
     });
   } else if (action === "download-all" || action === "download-missing") {
-    await startBatch(action === "download-all" ? "all" : "missing");
+    await withBusy(el, () => startBatch(action === "download-all" ? "all" : "missing"));
   } else if (action === "download-missing-col") {
-    await startBatch("missing");
+    await withBusy(el, () => startBatch("missing"));
   } else if (action === "retry-failed") {
     const failed = state.history.filter((h) => !h.ok);
     if (!failed.length) return toast(T("toast.noFailed"), "info");
@@ -1284,7 +1290,7 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
       run: () => setView("download"),
     });
     // re-descargar: se usa downloadMissing para los que falten
-    await startBatch("missing");
+    await withBusy(el, () => startBatch("missing"));
   } else if (action === "copy-log") {
     navigator.clipboard && navigator.clipboard.writeText(state.log.join("\n"));
     toast(T("toast.logCopied"), "success");
@@ -1325,15 +1331,17 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     }
     if (!isApp) return;
     toast(T("search.searching"), "info", false);
-    try {
-      const r = await api.request.searchSoundcloud({ query: q });
-      state.searchResults = r.tracks as unknown as CollectionItem[];
-      renderSearch(q);
-    } catch (err) {
-      state.searchResults = [];
-      renderSearch(q);
-      toast((err as Error).message, "error");
-    }
+    await withBusy(el, async () => {
+      try {
+        const r = await api.request.searchSoundcloud({ query: q });
+        state.searchResults = r.tracks as unknown as CollectionItem[];
+        renderSearch(q);
+      } catch (err) {
+        state.searchResults = [];
+        renderSearch(q);
+        toast((err as Error).message, "error");
+      }
+    });
   } else if (action === "download-link") {
     const v = ($("#link-input") as HTMLInputElement).value.trim();
     const bad = !/^https?:\/\/(www\.)?soundcloud\.com\//.test(v);
@@ -1344,12 +1352,14 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     }
     if (!isApp) return;
     if (!canDownload()) return;
-    try {
-      const r = await api.request.downloadUrl({ url: v });
-      if (!r.ok) toast("Código " + r.code, "warn");
-    } catch (err) {
-      toast((err as Error).message, "error");
-    }
+    await withBusy(el, async () => {
+      try {
+        const r = await api.request.downloadUrl({ url: v });
+        if (!r.ok) toast("Código " + r.code, "warn");
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    });
     setView("download");
   } else if (action === "back-playlists") {
     state.openPlaylist = null;
@@ -1371,18 +1381,20 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     }
     $("#folder-error").classList.add("hidden");
     if (!isApp) return;
-    await api.request.saveConfig({
-      outdir: ($("#set-folder") as HTMLInputElement).value.trim(),
-      format: ($("#set-format") as HTMLSelectElement).value,
-      bitrate: ($("#set-bitrate") as HTMLSelectElement).value,
-      filenameTemplate: $("#tpl-editor").textContent || "",
-      theme: ($("#set-theme") as HTMLSelectElement).value,
-      lang: currentLang,
-      skipExisting: ($("#set-skip") as HTMLInputElement).checked,
+    await withBusy(el, async () => {
+      await api.request.saveConfig({
+        outdir: ($("#set-folder") as HTMLInputElement).value.trim(),
+        format: ($("#set-format") as HTMLSelectElement).value,
+        bitrate: ($("#set-bitrate") as HTMLSelectElement).value,
+        filenameTemplate: $("#tpl-editor").textContent || "",
+        theme: ($("#set-theme") as HTMLSelectElement).value,
+        lang: currentLang,
+        skipExisting: ($("#set-skip") as HTMLInputElement).checked,
+      });
+      markClean();
+      toast(T("set.saved"), "success");
+      loadStatus();
     });
-    markClean();
-    toast(T("set.saved"), "success");
-    loadStatus();
   } else if (action === "clear-log") {
     state.log = [];
     $("#dev-log").textContent = "";
