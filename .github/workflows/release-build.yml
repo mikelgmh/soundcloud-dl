@@ -43,6 +43,24 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      # Sin notarización (secrets de Apple sin configurar) la firma ad-hoc que
+      # genera electrobun queda incompleta y macOS la rechaza como "dañada" al
+      # descargarla (Gatekeeper). Se re-firma ad-hoc de forma consistente para
+      # que solo baste quitar la cuarentena (o clic derecho > Abrir).
+      - name: Re-firmar app macOS (firma ad-hoc consistente)
+        if: matrix.name == 'macos-arm64'
+        shell: bash
+        run: |
+          set -e
+          cd artifacts
+          ARCHIVE="stable-macos-arm64-SoundCloudDownloader.app.tar.zst"
+          tar --zstd -xf "$ARCHIVE"
+          codesign --force --deep --sign - "SoundCloud Downloader.app"
+          rm "$ARCHIVE"
+          tar --zstd -cf "$ARCHIVE" "SoundCloud Downloader.app"
+          rm -rf "SoundCloud Downloader.app"
+          echo "App macOS re-firmada (ad-hoc consistente)."
+
       - name: Instalar Inno Setup (solo Windows)
         if: matrix.name == 'windows-x64'
         shell: powershell
