@@ -53,12 +53,23 @@ jobs:
         run: |
           set -e
           cd artifacts
+          APP="SoundCloud Downloader.app"
           ARCHIVE="stable-macos-arm64-SoundCloudDownloader.app.tar.zst"
           tar --zstd -xf "$ARCHIVE"
-          codesign --force --deep --sign - "SoundCloud Downloader.app"
+          codesign --force --deep --sign - "$APP"
           rm "$ARCHIVE"
-          tar --zstd -cf "$ARCHIVE" "SoundCloud Downloader.app"
-          rm -rf "SoundCloud Downloader.app"
+          tar --zstd -cf "$ARCHIVE" "$APP"
+          rm -rf "$APP"
+          # DMG: re-firmar la app que contiene (best-effort; el tar.zst es el
+          # principal para el actualizador).
+          if [ -f "stable-macos-arm64-SoundCloudDownloader.dmg" ]; then
+            mkdir -p dmg-mnt
+            if hdiutil attach "stable-macos-arm64-SoundCloudDownloader.dmg" \
+              -nobrowse -readwrite -mountpoint dmg-mnt 2>/dev/null; then
+              codesign --force --deep --sign - "dmg-mnt/$APP" 2>/dev/null || true
+              hdiutil detach dmg-mnt 2>/dev/null || true
+            fi
+          fi
           echo "App macOS re-firmada (ad-hoc consistente)."
 
       - name: Instalar Inno Setup (solo Windows)
