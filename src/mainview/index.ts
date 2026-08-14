@@ -489,7 +489,7 @@ let currentDownloadUrl: string | null = null;
 
 function canDownload(): boolean {
   if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) {
-    toast(T("toast.needDeps"), "error", false, { label: T("modal.deps.title"), run: () => openModal("deps") });
+    toast(T("toast.needDeps"), "error", false, { label: T("modal.deps.title"), run: () => runDeps() });
     return false;
   }
   if (!state.loggedIn) {
@@ -808,11 +808,15 @@ function openPurge(): void {
   openModal("purge");
 }
 
+let depsRunning = false;
 async function runDeps(): Promise<void> {
-  if (!isApp) return;
+  if (!isApp || depsRunning) return;
+  depsRunning = true;
   const pre = $("#deps-log");
   pre.textContent = "";
   openModal("deps");
+  $("#btn-deps-retry")?.classList.add("hidden");
+  $("#btn-deps-close")?.classList.add("hidden");
   pre.textContent += T("modal.deps.sub") + "\n";
   try {
     await api.request.installDeps({});
@@ -822,6 +826,10 @@ async function runDeps(): Promise<void> {
     setTimeout(() => closeModal($("#modal-deps")), 700);
   } catch (err) {
     pre.textContent += "ERROR: " + (err as Error).message + "\n";
+    $("#btn-deps-retry")?.classList.remove("hidden");
+    $("#btn-deps-close")?.classList.remove("hidden");
+  } finally {
+    depsRunning = false;
   }
 }
 
@@ -1518,6 +1526,8 @@ async function handleAction(action: string | undefined, el: HTMLElement): Promis
     $("#dev-log").textContent = "";
   } else if (action === "retry-deps") {
     runDeps();
+  } else if (action === "open-deps") {
+    runDeps();
   } else if (action === "do-update") {
     $("#update-icon").classList.add("hidden");
     $("#update-spinner").classList.remove("hidden");
@@ -1686,9 +1696,9 @@ async function boot(): Promise<void> {
   if (s) {
     seedSettings(s.config);
     if (!s.deps.ready) {
-      // se abre el modal de deps automáticamente
+      // se arranca la preparación de dependencias automáticamente
       setTimeout(() => {
-        if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) openModal("deps");
+        if (!state.deps.ytdlp?.ok || !state.deps.ffmpeg?.ok) runDeps();
       }, 600);
     }
     await loadLikes();

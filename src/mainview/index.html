@@ -120,7 +120,7 @@
             <div class="card">
               <p class="label" data-i18n="tools.title">HERRAMIENTAS NECESARIAS</p>
               <div class="mt-4 space-y-2" id="tools-list"></div>
-              <button id="btn-install" class="btn-primary mt-5" data-modal-open="deps" data-i18n="tools.install">Instalar dependencias</button>
+              <button id="btn-install" class="btn-primary mt-5" data-action="open-deps" data-i18n="tools.install">Instalar dependencias</button>
             </div>
           </section>
 
@@ -416,8 +416,8 @@
         <p class="mt-2 text-sm text-[var(--text-dim)]" data-i18n="modal.deps.sub">Descargando yt-dlp y ffmpeg. Esto solo ocurre una vez.</p>
         <pre id="deps-log" class="mt-4 h-32 overflow-y-auto rounded-none border border-[var(--line)] bg-[var(--page)] p-3 font-mono text-[11px] text-[var(--text-dim)]"></pre>
         <div class="mt-5 flex justify-end gap-2">
-          <button class="btn-secondary" data-modal-close data-i18n="common.close">Cerrar</button>
-          <button class="btn-primary" data-action="retry-deps" data-i18n="common.retry">Reintentar</button>
+          <button id="btn-deps-close" class="btn-secondary hidden" data-modal-close data-i18n="common.close">Cerrar</button>
+          <button id="btn-deps-retry" class="btn-primary hidden" data-action="retry-deps" data-i18n="common.retry">Reintentar</button>
         </div>
       </div>
     </div>
