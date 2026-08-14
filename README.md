@@ -23,6 +23,40 @@ Download the installer for your operating system (latest release):
 - The Windows download is a single-file `.exe` installer (built with Inno Setup). It installs the app per-user (no admin rights required), adds a Start Menu shortcut, an uninstaller and an entry in "Add or remove programs".
 - Alternative installers (`.tar.zst`, update bundles) and every version are on [GitHub Releases](https://github.com/mikelgmh/soundcloud-dl/releases).
 
+## Installing on macOS (Gatekeeper)
+
+The app is distributed **unsigned and not notarized** (it has no paid Apple Developer account), so macOS Gatekeeper blocks it the first time you open it after download. This is standard for open-source apps distributed outside the App Store. To open it:
+
+**Option A — Allow it in System Settings (no terminal):**
+
+1. Download the `.dmg` and drag the app to **Applications**.
+2. Try to open the app — Gatekeeper will show a block message.
+3. Open **System Settings → Privacy & Security**.
+4. Scroll down to the **Security** section and click **"Open Anyway"** next to the app.
+5. Confirm — the app now opens.
+
+> Note: on recent macOS versions (Sequoia and later) Apple removed the *right-click → Open* shortcut, so the "Open Anyway" button in System Settings is the standard method.
+
+**Option B — Clear the quarantine attribute (one line, for technical users):**
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/SoundCloud Downloader.app"
+```
+
+This tells macOS the app does not come from the internet, so it skips the check entirely and opens normally.
+
+**Option C — Homebrew (if you use Homebrew):**
+
+A cask is not published yet, but once it is:
+
+```bash
+brew install --cask mikelgmh/tap/soundcloud-downloader
+```
+
+### A note on notarization
+
+To open the app with **zero prompts** (like any App Store / notarized app), it must be **notarized** by Apple, which requires a paid Apple Developer account (**$99/year**). If this project is useful to you and you'd like to help cover that cost, GitHub Sponsors / Open Collective can be enabled on the repository — contributions would go straight to removing this step for everyone.
+
 ## Features
 
 - **Download favorites, playlists and use global search** on SoundCloud from inside the app.
